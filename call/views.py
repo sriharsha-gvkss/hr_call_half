@@ -81,6 +81,10 @@ def answer(request):
     question = request.GET.get('q', '')
     phone_number = request.GET.get('phone', '')
     
+    # If no question is provided, use a default question
+    if not question:
+        question = "Please tell us your full name, a brief self-introduction, your experience, and why you want to join our company."
+    
     # Create a new response record
     response = CallResponse.objects.create(
         phone_number=phone_number,
@@ -113,10 +117,11 @@ def recording_status(request):
             response = CallResponse.objects.get(id=response_id)
             response.recording_url = recording_url
             response.save()
+            return HttpResponse('Recording saved successfully!')
         except CallResponse.DoesNotExist:
-            pass
+            return HttpResponse('Response not found.', status=404)
     
-    return HttpResponse('OK')
+    return HttpResponse('No recording URL provided.', status=400)
 
 # HR Dashboard
 def dashboard(request):
