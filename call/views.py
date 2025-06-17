@@ -22,7 +22,7 @@ client = Client(
 )
 
 # Public URL for webhooks - Replace this with your actual public URL
-PUBLIC_URL = "https://your-public-url.ngrok.io"  # You'll need to replace this with your actual ngrok URL
+PUBLIC_URL = "https://call-1-u39m.onrender.com"  # Update this with your Render URL
 
 def format_phone_number(phone_number):
     """Format phone number to E.164 format"""
@@ -53,8 +53,9 @@ def make_call(request):
         # Format phone number
         formatted_number = format_phone_number(phone_number)
         
-        # Create webhook URL
-        webhook_url = f"{request.scheme}://{request.get_host()}/answer/?q={question}"
+        # Create webhook URL with proper encoding
+        encoded_question = quote(question)
+        webhook_url = f"{PUBLIC_URL}/answer/?q={encoded_question}"
         
         # Make the call
         call = client.calls.create(
