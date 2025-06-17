@@ -11,18 +11,23 @@
     <div class="container mx-auto px-4 py-8">
         <h1 class="text-3xl font-bold text-gray-800 mb-8">Call Response Dashboard</h1>
         
-        <form id="callForm" class="mb-8">
-            <div class="mb-4">
-                <label for="phone_number" class="block text-sm font-medium text-gray-700">Phone Number</label>
-                <input type="tel" id="phone_number" name="phone_number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
-            </div>
-            <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                Make Call
-            </button>
-        </form>
+        <!-- Make Call Form -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Make a Call</h2>
+            <form id="callForm" class="space-y-4">
+                <div>
+                    <label for="phone_number" class="block text-sm font-medium text-gray-700">Phone Number</label>
+                    <input type="tel" id="phone_number" name="phone_number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                </div>
+                <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                    Make Call
+                </button>
+            </form>
+        </div>
         
         <!-- Response List -->
         <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <h2 class="text-xl font-semibold p-6 border-b">Recent Responses</h2>
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -79,5 +84,33 @@
             </div>
         </div>
     </div>
+
+    <script>
+        document.getElementById('callForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const phoneNumber = document.getElementById('phone_number').value;
+            
+            fetch('/make-call/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `phone_number=${encodeURIComponent(phoneNumber)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert('Call initiated successfully!');
+                    location.reload();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while making the call.');
+            });
+        });
+    </script>
 </body>
 </html> 

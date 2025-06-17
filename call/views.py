@@ -160,8 +160,7 @@ def dashboard(request):
 
 def index(request):
     """Render the main page"""
-    recordings = Recording.objects.all().order_by('-created_at')
-    return render(request, 'index.html', {'recordings': recordings})
+    return render(request, 'call/dashboard.html')
 
 def test_config(request):
     config = {
