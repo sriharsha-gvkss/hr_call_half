@@ -81,9 +81,17 @@ def answer(request):
     question = request.GET.get('q', '')
     phone_number = request.GET.get('phone', '')
     
-    # If no question is provided, use a default question
+    # If no question is provided, use a sequence of default questions
     if not question:
-        question = "Please tell us your full name, a brief self-introduction, your experience, and why you want to join our company."
+        questions = [
+            "Please tell us your full name.",
+            "Please give us a brief self-introduction.",
+            "What is your current role?"
+        ]
+        # Store the questions in the session
+        request.session['questions'] = questions
+        request.session['current_question_index'] = 0
+        question = questions[0]
     
     # Create a new response record
     response = CallResponse.objects.create(
@@ -117,7 +125,28 @@ def recording_status(request):
             response = CallResponse.objects.get(id=response_id)
             response.recording_url = recording_url
             response.save()
-            return HttpResponse('Recording saved successfully!')
+            
+            # Check if there are more questions to ask
+            questions = request.session.get('questions', [])
+            current_index = request.session.get('current_question_index', 0)
+            
+            if current_index < len(questions) - 1:
+                # Move to the next question
+                request.session['current_question_index'] = current_index + 1
+                next_question = questions[current_index + 1]
+                resp = VoiceResponse()
+                resp.say(next_question, voice='Polly.Amy')
+                resp.record(
+                    action=f'/recording_status/?response_id={response.id}',
+                    maxLength='30',
+                    playBeep=False
+                )
+                return HttpResponse(str(resp))
+            else:
+                # All questions answered, thank the user and end the call
+                resp = VoiceResponse()
+                resp.say("Thank you for your responses. Goodbye!", voice='Polly.Amy')
+                return HttpResponse(str(resp))
         except CallResponse.DoesNotExist:
             return HttpResponse('Response not found.', status=404)
     
