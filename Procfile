@@ -1,0 +1,1 @@
+web: gunicorn hr_team.wsgi:application 

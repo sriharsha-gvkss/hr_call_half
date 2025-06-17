@@ -9,9 +9,17 @@ from .models import Recording
 import re
 from django.views.decorators.http import require_http_methods
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
-# Initialize Twilio client
-client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+# Load environment variables first
+load_dotenv()
+
+# Initialize Twilio client with environment variables
+client = Client(
+    os.getenv('TWILIO_ACCOUNT_SID'),
+    os.getenv('TWILIO_AUTH_TOKEN')
+)
 
 # Public URL for webhooks - Replace this with your actual public URL
 PUBLIC_URL = "https://your-public-url.ngrok.io"  # You'll need to replace this with your actual ngrok URL
@@ -51,7 +59,7 @@ def make_call(request):
         # Make the call
         call = client.calls.create(
             to=formatted_number,
-            from_=settings.TWILIO_PHONE_NUMBER,
+            from_=os.getenv('TWILIO_PHONE_NUMBER'),
             url=webhook_url
         )
         
@@ -122,3 +130,11 @@ def index(request):
     """Render the main page"""
     recordings = Recording.objects.all().order_by('-created_at')
     return render(request, 'index.html', {'recordings': recordings})
+
+def test_config(request):
+    config = {
+        'TWILIO_ACCOUNT_SID': os.getenv('TWILIO_ACCOUNT_SID'),
+        'TWILIO_AUTH_TOKEN': os.getenv('TWILIO_AUTH_TOKEN'),
+        'TWILIO_PHONE_NUMBER': os.getenv('TWILIO_PHONE_NUMBER'),
+    }
+    return JsonResponse(config)
