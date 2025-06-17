@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HR Interview Recordings</title>
+</head>
+<body>
+    <h1>Recorded Answers</h1>
+    <table border="1">
+        <tr>
+            <th>Question</th>
+            <th>Audio</th>
+            <th>Transcript</th>
+            <th>Date</th>
+        </tr>
+        {% for r in recordings %}
+        <tr>
+            <td>{{ r.question }}</td>
+            <td>
+                <audio controls>
+                    <source src="{{ r.recording_url }}" type="audio/mpeg">
+                </audio>
+            </td>
+            <td>{{ r.transcript|default:"Pending" }}</td>
+            <td>{{ r.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
