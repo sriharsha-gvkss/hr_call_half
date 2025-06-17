@@ -78,20 +78,20 @@ def make_call(request):
 @require_http_methods(["POST"])
 def answer(request):
     """Handle incoming call and play question"""
-    question = request.GET.get('q', '')
     phone_number = request.GET.get('phone', '')
     
-    # If no question is provided, use a sequence of default questions
-    if not question:
-        questions = [
-            "Please tell us your full name.",
-            "Please give us a brief self-introduction.",
-            "What is your current role?"
-        ]
-        # Store the questions in the session
-        request.session['questions'] = questions
-        request.session['current_question_index'] = 0
-        question = questions[0]
+    # Define the sequence of default questions
+    questions = [
+        "Hi, please tell us your full name.",
+        "What is your work experience?",
+        "What was your previous job role?",
+        "Why do you want to join our company?"
+    ]
+    
+    # Store the questions in the session
+    request.session['questions'] = questions
+    request.session['current_question_index'] = 0
+    question = questions[0]
     
     # Create a new response record
     response = CallResponse.objects.create(
