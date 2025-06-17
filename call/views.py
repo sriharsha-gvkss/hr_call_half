@@ -170,3 +170,8 @@ def test_config(request):
         'TWILIO_PHONE_NUMBER': os.getenv('TWILIO_PHONE_NUMBER'),
     }
     return JsonResponse(config)
+
+def view_response(request, response_id):
+    """Display the details of a specific response"""
+    response = CallResponse.objects.get(id=response_id)
+    return render(request, 'call/view_response.html', {'response': response})

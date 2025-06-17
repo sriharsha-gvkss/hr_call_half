@@ -7,4 +7,5 @@ urlpatterns = [
     path('answer/', views.answer, name='answer'),
     path('recording_status/', views.recording_status, name='recording_status'),
     path('test-config/', views.test_config, name='test_config'),
+    path('view_response/<int:response_id>/', views.view_response, name='view_response'),
 ]

@@ -51,6 +51,9 @@
                                     <a href="{{ response.recording_url }}" target="_blank" class="text-blue-600 hover:text-blue-900">
                                         <i class="fas fa-download"></i> Download
                                     </a>
+                                    <a href="{% url 'view_response' response.id %}" class="ml-2 text-green-600 hover:text-green-900">
+                                        <i class="fas fa-eye"></i> View Response
+                                    </a>
                                 {% endif %}
                             </td>
                         </tr>
