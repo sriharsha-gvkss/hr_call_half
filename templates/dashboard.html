@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HR Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .call-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .recording {
+            background: white;
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        input[type="tel"], input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .recordings-section {
+            margin-top: 30px;
+        }
+        .recording h3 {
+            color: #333;
+            margin-top: 0;
+        }
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+        .error-message {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        .success-message {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>HR Dashboard</h1>
+        
+        <div class="call-section">
+            <h2>Make a Call</h2>
+            <div id="error-message" class="error-message"></div>
+            <div id="success-message" class="success-message"></div>
+            <form id="call-form" action="/make-call/" method="POST">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="phone_number">Client Phone Number:</label>
+                    <input type="tel" id="phone_number" name="phone_number" placeholder="91XXXXXXXXXX" required>
+                    <small>Format: 91 followed by 10-digit number (e.g., 919876543210)</small>
+                </div>
+                <div class="form-group">
+                    <label for="question">Question to Ask:</label>
+                    <textarea id="question" name="question" rows="3" placeholder="Enter your question here..." required></textarea>
+                </div>
+                <button type="submit">Make Call</button>
+            </form>
+        </div>
+
+        <div class="recordings-section">
+            <h2>Recorded Responses</h2>
+            <div class="recordings">
+                {% for recording in recordings %}
+                <div class="recording">
+                    <h3>Question: {{ recording.question }}</h3>
+                    <p>Recorded on: {{ recording.created_at }}</p>
+                    <audio controls>
+                        <source src="{{ recording.recording_url }}" type="audio/mpeg">
+                        Your browser does not support the audio element.
+                    </audio>
+                </div>
+                {% empty %}
+                <p>No recordings available.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('call-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const form = this;
+            const errorDiv = document.getElementById('error-message');
+            const successDiv = document.getElementById('success-message');
+            const submitButton = form.querySelector('button[type="submit"]');
+            
+            // Disable the submit button
+            submitButton.disabled = true;
+            submitButton.textContent = 'Making Call...';
+            
+            fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    successDiv.style.display = 'none';
+                } else {
+                    successDiv.textContent = data.message || 'Call initiated successfully!';
+                    successDiv.style.display = 'block';
+                    errorDiv.style.display = 'none';
+                    form.reset();
+                }
+            })
+            .catch(error => {
+                errorDiv.textContent = 'An error occurred. Please try again.';
+                errorDiv.style.display = 'block';
+                successDiv.style.display = 'none';
+            })
+            .finally(() => {
+                // Re-enable the submit button
+                submitButton.disabled = false;
+                submitButton.textContent = 'Make Call';
+            });
+        });
+    </script>
+</body>
+</html> 
