@@ -69,6 +69,7 @@ def make_call(request):
         })
         
     except Exception as e:
+        print(f"Error making call: {str(e)}")  # Add logging
         return JsonResponse({'error': str(e)}, status=500)
 
 # Answer call with questions

@@ -90,12 +90,13 @@
             e.preventDefault();
             const phoneNumber = document.getElementById('phone_number').value;
             
+            // Create form data
+            const formData = new FormData();
+            formData.append('phone_number', phoneNumber);
+            
             fetch('/make-call/', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `phone_number=${encodeURIComponent(phoneNumber)}`
+                body: formData
             })
             .then(response => response.json())
             .then(data => {
