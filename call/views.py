@@ -46,17 +46,15 @@ def format_phone_number(phone_number):
 def make_call(request):
     try:
         phone_number = request.POST.get('phone_number')
-        question = request.POST.get('question')
         
-        if not phone_number or not question:
-            return JsonResponse({'error': 'Phone number and question are required'}, status=400)
+        if not phone_number:
+            return JsonResponse({'error': 'Phone number is required'}, status=400)
         
         # Format phone number
         formatted_number = format_phone_number(phone_number)
         
-        # Create webhook URL with proper encoding
-        encoded_question = quote(question)
-        webhook_url = f"{PUBLIC_URL}/answer/?q={encoded_question}"
+        # Create webhook URL with phone number
+        webhook_url = f"{PUBLIC_URL}/answer/?phone={formatted_number}"
         
         # Make the call
         call = client.calls.create(
