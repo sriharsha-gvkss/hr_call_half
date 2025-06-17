@@ -5,12 +5,13 @@ from twilio.twiml.voice_response import VoiceResponse, Record, Say
 from twilio.rest import Client
 from django.conf import settings
 from urllib.parse import quote
-from .models import Recording
+from .models import Recording, CallResponse
 import re
 from django.views.decorators.http import require_http_methods
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from django.utils import timezone
 
 # Load environment variables first
 load_dotenv()
@@ -75,57 +76,53 @@ def make_call(request):
 # Answer call with questions
 @csrf_exempt
 @require_http_methods(["POST"])
-def answer_call(request):
-    try:
-        # Get the question from the URL
-        question = request.GET.get('q', '')
-        
-        # Create TwiML response
-        response = VoiceResponse()
-        
-        # Add the question
-        response.say(f"Hello, I have a question for you: {question}")
-        
-        # Record the response
-        response.record(
-            action=f"/save-recording/?q={question}",
-            maxLength="60",
-            playBeep=True
-        )
-        
-        return HttpResponse(str(response), content_type='text/xml')
-        
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+def answer(request):
+    """Handle incoming call and play question"""
+    question = request.GET.get('q', '')
+    phone_number = request.GET.get('phone', '')
+    
+    # Create a new response record
+    response = CallResponse.objects.create(
+        phone_number=phone_number,
+        question=question
+    )
+    
+    # Store the response ID in the session
+    request.session['response_id'] = response.id
+    
+    resp = VoiceResponse()
+    resp.say(question, voice='Polly.Amy')
+    resp.record(
+        action=f'/recording_status/?response_id={response.id}',
+        maxLength='30',
+        playBeep=False
+    )
+    
+    return HttpResponse(str(resp))
 
 # Handle recorded answer
 @csrf_exempt
 @require_http_methods(["POST"])
-def save_recording(request):
-    try:
-        # Get the recording URL and question
-        recording_url = request.POST.get('RecordingUrl')
-        question = request.GET.get('q', '')
-        
-        if not recording_url:
-            return JsonResponse({'error': 'No recording URL provided'}, status=400)
-        
-        # Save the recording
-        recording = Recording.objects.create(
-            question=question,
-            recording_url=recording_url,
-            created_at=datetime.now()
-        )
-        
-        return JsonResponse({'message': 'Recording saved successfully'})
-        
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+def recording_status(request):
+    """Handle recording status callback"""
+    response_id = request.GET.get('response_id')
+    recording_url = request.POST.get('RecordingUrl')
+    
+    if response_id and recording_url:
+        try:
+            response = CallResponse.objects.get(id=response_id)
+            response.recording_url = recording_url
+            response.save()
+        except CallResponse.DoesNotExist:
+            pass
+    
+    return HttpResponse('OK')
 
 # HR Dashboard
 def dashboard(request):
-    data = Recording.objects.all().order_by('-created_at')
-    return render(request, 'dashboard.html', {'recordings': data})
+    """Display dashboard with all responses"""
+    responses = CallResponse.objects.all().order_by('-created_at')
+    return render(request, 'call/dashboard.html', {'responses': responses})
 
 def index(request):
     """Render the main page"""
