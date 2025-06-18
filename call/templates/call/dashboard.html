@@ -43,6 +43,25 @@
             </div>
         </div>
         
+        <!-- Transcript Statistics -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Transcript Status</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <p class="text-sm text-green-600">Completed</p>
+                    <p class="text-2xl font-bold text-green-700">{{ transcript_stats.completed }}</p>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <p class="text-sm text-yellow-600">Pending</p>
+                    <p class="text-2xl font-bold text-yellow-700">{{ transcript_stats.pending }}</p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <p class="text-sm text-red-600">Failed</p>
+                    <p class="text-2xl font-bold text-red-700">{{ transcript_stats.failed }}</p>
+                </div>
+            </div>
+        </div>
+        
         <!-- Make Call Form -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 class="text-xl font-semibold mb-4">Make a Call</h2>
@@ -78,6 +97,7 @@
                                     {{ response.created_at|date:"M d, Y H:i" }}
                                 </div>
                             </div>
+                            
                             {% if response.recording_url %}
                             <div class="mt-4">
                                 <p class="text-sm font-medium text-gray-900">Recording:</p>

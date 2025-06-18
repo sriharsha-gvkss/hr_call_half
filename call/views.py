@@ -238,12 +238,20 @@ def dashboard(request):
                 responses_by_phone[response.phone_number] = []
             responses_by_phone[response.phone_number].append(response)
         
+        # Get transcript statistics
+        transcript_stats = {
+            'completed': responses.filter(transcript_status='completed').count(),
+            'pending': responses.filter(transcript_status='pending').count(),
+            'failed': responses.filter(transcript_status='failed').count(),
+        }
+        
         context = {
             'responses': responses,
             'total_responses': total_responses,
             'total_recordings': total_recordings,
             'total_transcripts': total_transcripts,
-            'responses_by_phone': responses_by_phone
+            'responses_by_phone': responses_by_phone,
+            'transcript_stats': transcript_stats
         }
         
         return render(request, 'call/dashboard.html', context)
@@ -251,12 +259,13 @@ def dashboard(request):
     except Exception as e:
         logger.error(f"Error in dashboard view: {str(e)}")
         return render(request, 'call/dashboard.html', {
+            'error': str(e),
             'responses': [],
             'total_responses': 0,
             'total_recordings': 0,
             'total_transcripts': 0,
             'responses_by_phone': {},
-            'error': str(e)
+            'transcript_stats': {'completed': 0, 'pending': 0, 'failed': 0}
         })
 
 def index(request):
