@@ -180,147 +180,137 @@ def answer(request):
         return HttpResponse(str(resp))
 
 def fetch_transcript_with_retry(recording_sid, max_retries=3, delay=5):
-    """Fetch transcript for a recording with retries and proper error handling"""
-    try:
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        
-        for attempt in range(max_retries):
-            try:
-                # Get the recording
-                recording = client.recordings(recording_sid).fetch()
+    """Fetch transcript for a recording with retries and error handling"""
+    for attempt in range(max_retries):
+        try:
+            # Get the recording
+            recording = client.recordings(recording_sid).fetch()
+            
+            # Get transcriptions for the recording
+            transcriptions = client.transcriptions.list(recording_sid=recording_sid)
+            
+            if transcriptions:
+                # Get the most recent transcription
+                transcription = transcriptions[0]
                 
-                # Get the transcript
-                transcript = client.transcriptions.list(recording_sid=recording_sid)
-                
-                if transcript:
+                # Check if transcription is complete
+                if transcription.status == 'completed':
                     return {
                         'status': 'completed',
-                        'text': transcript[0].transcription_text,
-                        'error': None
+                        'text': transcription.text
                     }
-                
-                logger.info(f"Transcript not ready for recording {recording_sid}, attempt {attempt + 1}/{max_retries}")
-                if attempt < max_retries - 1:
-                    time.sleep(delay)
-                    
-            except Exception as e:
-                logger.error(f"Error fetching transcript (attempt {attempt + 1}): {str(e)}")
-                if attempt < max_retries - 1:
-                    time.sleep(delay)
-                else:
+                elif transcription.status == 'failed':
                     return {
                         'status': 'failed',
-                        'text': None,
-                        'error': str(e)
+                        'text': None
                     }
-        
-        return {
-            'status': 'pending',
-            'text': None,
-            'error': 'Max retries reached'
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in fetch_transcript_with_retry: {str(e)}")
-        return {
-            'status': 'failed',
-            'text': None,
-            'error': str(e)
-        }
+            
+            # If we get here, either no transcriptions or still processing
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                continue
+                
+            return {
+                'status': 'pending',
+                'text': None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching transcript (attempt {attempt + 1}): {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                continue
+            return {
+                'status': 'failed',
+                'text': None
+            }
 
 def update_transcript_for_response(response):
     """Update transcript for a specific response"""
     if not response.recording_sid:
-        logger.error(f"No recording SID for response {response.id}")
+        logger.warning(f"No recording SID for response {response.id}")
         return False
         
-    result = fetch_transcript_with_retry(response.recording_sid)
-    
-    if result['status'] == 'completed':
-        response.transcript = result['text']
-        response.transcript_status = 'completed'
-        response.save()
-        logger.info(f"Successfully updated transcript for response {response.id}")
-        return True
-    elif result['status'] == 'failed':
-        response.transcript_status = 'failed'
-        response.save()
-        logger.error(f"Failed to update transcript for response {response.id}: {result['error']}")
-        return False
-    else:
-        response.transcript_status = 'pending'
-        response.save()
-        logger.info(f"Transcript still pending for response {response.id}")
+    try:
+        result = fetch_transcript_with_retry(response.recording_sid)
+        
+        if result['status'] == 'completed':
+            response.transcript = result['text']
+            response.transcript_status = 'completed'
+            response.save()
+            logger.info(f"Updated transcript for response {response.id}")
+            return True
+        elif result['status'] == 'failed':
+            response.transcript_status = 'failed'
+            response.save()
+            logger.warning(f"Failed to get transcript for response {response.id}")
+            return False
+        else:
+            response.transcript_status = 'pending'
+            response.save()
+            logger.info(f"Transcript pending for response {response.id}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error updating transcript for response {response.id}: {str(e)}")
         return False
 
 @csrf_exempt
 def transcription_webhook(request):
-    """Handle transcription webhook from Twilio"""
-    if request.method == "POST":
+    """Handle incoming transcription data from Twilio"""
+    try:
+        data = json.loads(request.body)
+        logger.info(f"Received transcription webhook: {data}")
+        
+        # Extract relevant data
+        recording_sid = data.get('RecordingSid')
+        transcription_text = data.get('TranscriptionText')
+        transcription_status = data.get('TranscriptionStatus')
+        
+        if not recording_sid:
+            logger.error("No RecordingSid in transcription webhook")
+            return HttpResponse(status=400)
+            
+        # Find the response with this recording SID
         try:
-            # Get transcription data from request
-            transcript_text = request.POST.get('TranscriptionText')
-            recording_url = request.POST.get('RecordingUrl')
-            call_sid = request.POST.get('CallSid')
-            recording_sid = request.POST.get('RecordingSid')
-            transcription_status = request.POST.get('TranscriptionStatus')
+            response = CallResponse.objects.get(recording_sid=recording_sid)
+        except CallResponse.DoesNotExist:
+            logger.error(f"No response found for recording {recording_sid}")
+            return HttpResponse(status=404)
             
-            logger.info(f"Received transcription webhook for CallSID: {call_sid}")
-            logger.info(f"Recording SID: {recording_sid}")
-            logger.info(f"Transcription Status: {transcription_status}")
+        # Update the response with transcription data
+        if transcription_status == 'completed' and transcription_text:
+            response.transcript = transcription_text
+            response.transcript_status = 'completed'
+            response.save()
+            logger.info(f"Updated transcript for response {response.id}")
+        elif transcription_status == 'failed':
+            response.transcript_status = 'failed'
+            response.save()
+            logger.warning(f"Transcription failed for response {response.id}")
             
-            if transcription_status == 'completed' and transcript_text:
-                # Find or create CallResponse
-                response, created = CallResponse.objects.get_or_create(
-                    recording_sid=recording_sid,
-                    defaults={
-                        'phone_number': call_sid,  # Using call_sid temporarily
-                        'question': 'Auto-transcribed response',
-                        'recording_url': recording_url,
-                        'transcript': transcript_text,
-                        'transcript_status': 'completed'
-                    }
-                )
-                
-                if not created:
-                    # Update existing response
-                    response.transcript = transcript_text
-                    response.transcript_status = 'completed'
-                    response.save()
-                
-                logger.info(f"Successfully processed transcription for recording {recording_sid}")
-                return HttpResponse("Transcription received and processed", status=200)
-            else:
-                logger.warning(f"Received incomplete transcription for recording {recording_sid}")
-                return HttpResponse("Incomplete transcription data", status=202)
-            
-        except Exception as e:
-            logger.error(f"Error in transcription webhook: {str(e)}")
-            return HttpResponse(f"Error processing transcription: {str(e)}", status=500)
-            
-    return HttpResponse("Invalid request method", status=400)
+        return HttpResponse(status=200)
+        
+    except Exception as e:
+        logger.error(f"Error in transcription webhook: {str(e)}")
+        return HttpResponse(status=500)
 
-# Add a new view for manually triggering transcription
 @login_required
 def retry_transcription(request, response_id):
     """Manually trigger transcription for a specific response"""
     try:
         response = CallResponse.objects.get(id=response_id)
         
-        if not response.recording_sid:
-            messages.error(request, "No recording found for this response")
-            return redirect('dashboard')
-            
         if response.transcript_status == 'completed':
-            messages.info(request, "Transcription already completed")
+            messages.warning(request, "Transcription is already completed")
             return redirect('dashboard')
             
         success = update_transcript_for_response(response)
         
         if success:
-            messages.success(request, "Successfully updated transcription")
+            messages.success(request, "Transcription updated successfully")
         else:
-            messages.warning(request, "Failed to update transcription. Please try again later.")
+            messages.warning(request, "Transcription is still processing or failed")
             
         return redirect('dashboard')
         
@@ -328,8 +318,8 @@ def retry_transcription(request, response_id):
         messages.error(request, "Response not found")
         return redirect('dashboard')
     except Exception as e:
-        logger.error(f"Error in retry_transcription: {str(e)}")
-        messages.error(request, "An error occurred while processing your request")
+        logger.error(f"Error retrying transcription: {str(e)}")
+        messages.error(request, "Error updating transcription")
         return redirect('dashboard')
 
 # Handle recorded answer
@@ -607,62 +597,54 @@ def export_to_excel(request):
 
 @csrf_exempt
 def voice(request):
-    """Handle voice response and ask next question"""
+    """Handle voice responses and ask next question"""
     try:
         # Get the call SID from the request
         call_sid = request.POST.get('CallSid')
         if not call_sid:
             logger.error("No CallSid provided in request")
             return HttpResponse('No CallSid provided', status=400)
-
-        # Get the response ID from the URL parameters
+            
+        # Get the response ID from the URL
         response_id = request.GET.get('response_id')
         if not response_id:
             logger.error("No response_id provided in request")
             return HttpResponse('No response_id provided', status=400)
-
-        logger.info(f"Processing voice response for call {call_sid} with response_id {response_id}")
-        
-        # Initialize Twilio client
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        
-        # Get call details
-        call = client.calls(call_sid).fetch()
-        
-        # Get the recording SID from the request
+            
+        # Get the current response
+        try:
+            current_response = CallResponse.objects.get(id=response_id)
+        except CallResponse.DoesNotExist:
+            logger.error(f"Response {response_id} not found")
+            return HttpResponse('Response not found', status=404)
+            
+        # Get the recording URL and SID
+        recording_url = request.POST.get('RecordingUrl')
         recording_sid = request.POST.get('RecordingSid')
-        if recording_sid:
-            # Update the previous response with recording details
-            try:
-                response = CallResponse.objects.get(id=response_id)
-                recording = client.recordings(recording_sid).fetch()
-                response.recording_sid = recording_sid
-                response.recording_url = recording.uri
-                response.recording_duration = recording.duration
-                response.save()
-
-                # Get the transcript from Twilio
-                try:
-                    # Get the recording's transcript
-                    transcript = client.transcriptions.list(recording_sid=recording_sid)
-                    if transcript:
-                        response.transcript = transcript[0].transcription_text
-                        response.transcript_status = 'completed'
-                        logger.info(f"Transcript saved for recording {recording_sid}")
-                    else:
-                        response.transcript_status = 'pending'
-                        logger.info(f"No transcript available for recording {recording_sid}")
-                except Exception as e:
-                    logger.error(f"Error fetching transcript: {str(e)}")
-                    response.transcript_status = 'failed'
-                response.save()
-            except CallResponse.DoesNotExist:
-                logger.error(f"Response not found: {response_id}")
+        recording_duration = request.POST.get('RecordingDuration')
         
-        # Get current question index from session
+        if recording_url and recording_sid:
+            # Update the current response with recording details
+            current_response.recording_url = recording_url
+            current_response.recording_sid = recording_sid
+            current_response.recording_duration = recording_duration
+            current_response.save()
+            
+            # Start transcription process
+            try:
+                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                transcription = client.transcriptions.create(
+                    recording_sid=recording_sid,
+                    language_code='en-US'
+                )
+                logger.info(f"Started transcription for recording {recording_sid}")
+            except Exception as e:
+                logger.error(f"Error starting transcription: {str(e)}")
+        
+        # Get the current question index from the session
         current_index = request.session.get('current_question_index', 0)
         
-        # Create response object
+        # Create TwiML response
         resp = VoiceResponse()
         
         # Check if we have more questions to ask
@@ -673,7 +655,7 @@ def voice(request):
             
             # Create a new CallResponse record
             response = CallResponse.objects.create(
-                phone_number=call.to,
+                phone_number=current_response.phone_number,
                 call_sid=call_sid,
                 question=question,
                 call_status='in-progress'
@@ -703,29 +685,24 @@ def voice(request):
             )
             
             logger.info(f"Generated TwiML for question {next_index + 1} for call {call_sid}")
-            
         else:
             # All questions have been asked
-            resp.say("Thank you for your time. We will review your responses and get back to you soon.", voice='Polly.Amy')
+            resp.say("Thank you for your time. The interview is now complete.", voice='Polly.Amy')
             
             # Update all responses for this call to completed
             CallResponse.objects.filter(call_sid=call_sid).update(call_status='completed')
             
-            # Reset the session
-            request.session['current_question_index'] = 0
-            if 'response_id' in request.session:
-                del request.session['response_id']
-            if 'call_sid' in request.session:
-                del request.session['call_sid']
+            # Clean up session
+            request.session.flush()
             
-            logger.info(f"Call {call_sid} completed successfully")
+            logger.info(f"Completed call {call_sid}")
         
         return HttpResponse(str(resp))
         
     except Exception as e:
         logger.error(f"Error in voice view: {str(e)}")
         resp = VoiceResponse()
-        resp.say("We're sorry, but there was an error processing your call. Please try again later.", voice='Polly.Amy')
+        resp.say("We're sorry, but there was an error processing your response. Please try again later.", voice='Polly.Amy')
         return HttpResponse(str(resp))
 
 @csrf_exempt
