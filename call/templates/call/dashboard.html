@@ -2,6 +2,34 @@
 
 {% block content %}
 <div class="container mt-4">
+    <!-- Make Call Form -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Make a Call</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{% url 'make_call' %}">
+                {% csrf_token %}
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="form-group">
+                            <label for="phone_number">Phone Number</label>
+                            <input type="tel" class="form-control" id="phone_number" name="phone_number" 
+                                   placeholder="Enter phone number (e.g., 9876543210)" required>
+                            <small class="form-text text-muted">Enter the phone number with or without country code</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-phone"></i> Make Call
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card bg-primary text-white">
@@ -37,6 +65,7 @@
         </div>
     </div>
 
+    <!-- Call Records -->
     <div class="row mb-4">
         <div class="col">
             <div class="card">
