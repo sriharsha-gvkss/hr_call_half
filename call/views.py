@@ -104,39 +104,67 @@ def make_call(request):
 @require_http_methods(["POST"])
 def answer(request):
     """Handle incoming call and play question"""
-    phone_number = request.GET.get('phone', '')
-    
-    # Define the sequence of default questions
-    questions = [
-        "Hi, please tell us your full name.",
-        "What is your work experience?",
-        "What was your previous job role?",
-        "Why do you want to join our company?"
-    ]
-    
-    # Store the questions in the session
-    request.session['questions'] = questions
-    request.session['current_question_index'] = 0
-    question = questions[0]
-    
-    # Create a new response record
-    response = CallResponse.objects.create(
-        phone_number=phone_number,
-        question=question
-    )
-    
-    # Store the response ID in the session
-    request.session['response_id'] = response.id
-    
-    resp = VoiceResponse()
-    resp.say(question, voice='Polly.Amy')
-    resp.record(
-        action=f'/recording_status/?response_id={response.id}',
-        maxLength='30',
-        playBeep=False
-    )
-    
-    return HttpResponse(str(resp))
+    try:
+        # Get the call SID from the request
+        call_sid = request.POST.get('CallSid')
+        if not call_sid:
+            return HttpResponse('No CallSid provided', status=400)
+
+        # Get the phone number from the request
+        phone_number = request.POST.get('To', '')
+        
+        # Initialize Twilio client
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        
+        # Get call details
+        call = client.calls(call_sid).fetch()
+        
+        # Define the sequence of questions
+        questions = [
+            "Hi, please tell us your full name.",
+            "What is your work experience?",
+            "What was your previous job role?",
+            "Why do you want to join our company?"
+        ]
+        
+        # Reset session for new call
+        request.session['questions'] = questions
+        request.session['current_question_index'] = 0
+        
+        # Get the first question
+        question = questions[0]
+        
+        # Create a new response record
+        response = CallResponse.objects.create(
+            phone_number=phone_number,
+            call_sid=call_sid,
+            question=question,
+            call_status='in-progress'
+        )
+        
+        # Store the response ID in the session
+        request.session['response_id'] = response.id
+        
+        # Create TwiML response
+        resp = VoiceResponse()
+        
+        # Ask the question
+        resp.say(question, voice='Polly.Amy')
+        
+        # Record the response
+        resp.record(
+            action=f'/recording_status/?response_id={response.id}',
+            maxLength='30',
+            playBeep=False
+        )
+        
+        return HttpResponse(str(resp))
+        
+    except Exception as e:
+        logger.error(f"Error in answer view: {str(e)}")
+        resp = VoiceResponse()
+        resp.say("We're sorry, but there was an error processing your call. Please try again later.", voice='Polly.Amy')
+        return HttpResponse(str(resp))
 
 def fetch_transcript(recording_sid):
     """Fetch transcript for a recording using Twilio's API"""
@@ -404,13 +432,13 @@ def voice(request):
         # Get call details
         call = client.calls(call_sid).fetch()
         
-        # Define the sequence of questions
-        questions = [
+        # Get questions from session or use default
+        questions = request.session.get('questions', [
             "Hi, please tell us your full name.",
             "What is your work experience?",
             "What was your previous job role?",
             "Why do you want to join our company?"
-        ]
+        ])
         
         # Get current question index from session or initialize to 0
         current_index = request.session.get('current_question_index', 0)
@@ -458,6 +486,8 @@ def voice(request):
             request.session['current_question_index'] = 0
             if 'response_id' in request.session:
                 del request.session['response_id']
+            if 'questions' in request.session:
+                del request.session['questions']
         
         return HttpResponse(str(resp))
         
