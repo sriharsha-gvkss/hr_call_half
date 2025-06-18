@@ -11,10 +11,4 @@ urlpatterns = [
     path('view-response/<int:response_id>/', views.view_response, name='view_response'),
     path('export-excel/', views.export_to_excel, name='export_excel'),
     path('transcription/', views.transcription_webhook, name='transcription'),
-    path('retry-transcription/<int:response_id>/', views.retry_transcription, name='retry_transcription'),
-    path('call-status/', views.call_status, name='call_status'),
-    path('recording-status/', views.recording_status, name='recording_status'),
-    path('transcription-webhook/', views.transcription_webhook, name='transcription_webhook'),
-    path('export-to-excel/', views.export_to_excel, name='export_to_excel'),
-    path('download-csv/', views.download_csv, name='download_csv'),
 ]

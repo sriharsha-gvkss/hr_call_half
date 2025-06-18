@@ -118,9 +118,4 @@ TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 PUBLIC_URL = 'https://call-1-u39m.onrender.com'  # Render deployment URL
 
 # Default primary key field type
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Authentication settings
-LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'dashboard'
-LOGOUT_REDIRECT_URL = 'login' 
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField' 

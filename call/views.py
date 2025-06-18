@@ -19,7 +19,6 @@ import json
 from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-import csv
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +34,13 @@ client = Client(
 # Public URL for webhooks - Replace this with your actual public URL
 PUBLIC_URL = "https://call-1-u39m.onrender.com"  # Update this with your Render URL
 
-# Load questions from JSON file
-def load_questions():
-    try:
-        with open('questions.json', 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.error("questions.json not found, using default questions")
-        return [
-            "Hi, what is your full name?",
-            "What is your work experience?",
-            "What was your previous job role?",
-            "Why do you want to join our company?"
-        ]
-
-INTERVIEW_QUESTIONS = load_questions()
+# Define the sequence of questions
+INTERVIEW_QUESTIONS = [
+    "Hi, what is your full name?",
+    "What is your work experience?",
+    "What was your previous job role?",
+    "Why do you want to join our company?"
+]
 
 def format_phone_number(phone_number):
     """Format phone number to E.164 format"""
@@ -135,16 +126,11 @@ def answer(request):
         phone_number = request.POST.get('To', '')
         logger.info(f"Received call from {phone_number} with SID: {call_sid}")
         
-        # Initialize session state for this call
-        request.session['current_question_index'] = 0
-        request.session['call_sid'] = call_sid
+        # Initialize Twilio client
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
-        # Create TwiML response
-        resp = VoiceResponse()
-        
-        # Welcome message
-        resp.say("Welcome to the HR interview. Let's begin.", voice='Polly.Amy')
-        resp.pause(length=1)
+        # Get call details
+        call = client.calls(call_sid).fetch()
         
         # Get the first question
         question = INTERVIEW_QUESTIONS[0]
@@ -160,13 +146,26 @@ def answer(request):
         # Store the response ID in the session
         request.session['response_id'] = response.id
         
-        # Ask the question
-        gather = Gather(input='speech', action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}', 
-                       method='POST', timeout=5)
-        gather.say(question, voice='Polly.Amy')
-        resp.append(gather)
+        # Create TwiML response
+        resp = VoiceResponse()
         
-        logger.info(f"Initialized call {call_sid} with first question")
+        # Add a short pause before asking the question
+        resp.pause(length=0.5)
+        
+        # Ask the question
+        resp.say(question, voice='Polly.Amy')
+        
+        # Add a short pause after the question
+        resp.pause(length=0.5)
+        
+        # Record the response
+        resp.record(
+            action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
+            maxLength='30',
+            playBeep=False,
+            trim='trim-silence'
+        )
+        
         return HttpResponse(str(resp))
         
     except Exception as e:
@@ -175,148 +174,23 @@ def answer(request):
         resp.say("We're sorry, but there was an error processing your call. Please try again later.", voice='Polly.Amy')
         return HttpResponse(str(resp))
 
-def fetch_transcript_with_retry(recording_sid, max_retries=3, delay=5):
-    """Fetch transcript for a recording with retries and error handling"""
-    for attempt in range(max_retries):
-        try:
-            # Get the recording
-            recording = client.recordings(recording_sid).fetch()
-            
-            # Get transcriptions for the recording
-            transcriptions = client.transcriptions.list(recording_sid=recording_sid)
-            
-            if transcriptions:
-                # Get the most recent transcription
-                transcription = transcriptions[0]
-                
-                # Check if transcription is complete
-                if transcription.status == 'completed':
-                    return {
-                        'status': 'completed',
-                        'text': transcription.text
-                    }
-                elif transcription.status == 'failed':
-                    return {
-                        'status': 'failed',
-                        'text': None
-                    }
-            
-            # If we get here, either no transcriptions or still processing
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                continue
-                
-            return {
-                'status': 'pending',
-                'text': None
-            }
-            
-        except Exception as e:
-            logger.error(f"Error fetching transcript (attempt {attempt + 1}): {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                continue
-            return {
-                'status': 'failed',
-                'text': None
-            }
-
-def update_transcript_for_response(response):
-    """Update transcript for a specific response"""
-    if not response.recording_sid:
-        logger.warning(f"No recording SID for response {response.id}")
-        return False
-        
+def fetch_transcript(recording_sid):
+    """Fetch transcript for a recording using Twilio's API"""
     try:
-        result = fetch_transcript_with_retry(response.recording_sid)
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
-        if result['status'] == 'completed':
-            response.transcript = result['text']
-            response.transcript_status = 'completed'
-            response.save()
-            logger.info(f"Updated transcript for response {response.id}")
-            return True
-        elif result['status'] == 'failed':
-            response.transcript_status = 'failed'
-            response.save()
-            logger.warning(f"Failed to get transcript for response {response.id}")
-            return False
-        else:
-            response.transcript_status = 'pending'
-            response.save()
-            logger.info(f"Transcript pending for response {response.id}")
-            return False
-            
+        # Get the recording
+        recording = client.recordings(recording_sid).fetch()
+        
+        # Get the transcript
+        transcript = client.recordings(recording_sid).transcriptions.list()
+        
+        if transcript:
+            return transcript[0].transcription_text
+        return None
     except Exception as e:
-        logger.error(f"Error updating transcript for response {response.id}: {str(e)}")
-        return False
-
-@csrf_exempt
-def transcription_webhook(request):
-    """Handle incoming transcription data from Twilio"""
-    try:
-        data = json.loads(request.body)
-        logger.info(f"Received transcription webhook: {data}")
-        
-        # Extract relevant data
-        recording_sid = data.get('RecordingSid')
-        transcription_text = data.get('TranscriptionText')
-        transcription_status = data.get('TranscriptionStatus')
-        
-        if not recording_sid:
-            logger.error("No RecordingSid in transcription webhook")
-            return HttpResponse(status=400)
-            
-        # Find the response with this recording SID
-        try:
-            response = CallResponse.objects.get(recording_sid=recording_sid)
-        except CallResponse.DoesNotExist:
-            logger.error(f"No response found for recording {recording_sid}")
-            return HttpResponse(status=404)
-            
-        # Update the response with transcription data
-        if transcription_status == 'completed' and transcription_text:
-            response.transcript = transcription_text
-            response.transcript_status = 'completed'
-            response.save()
-            logger.info(f"Updated transcript for response {response.id}")
-        elif transcription_status == 'failed':
-            response.transcript_status = 'failed'
-            response.save()
-            logger.warning(f"Transcription failed for response {response.id}")
-            
-        return HttpResponse(status=200)
-        
-    except Exception as e:
-        logger.error(f"Error in transcription webhook: {str(e)}")
-        return HttpResponse(status=500)
-
-@login_required
-def retry_transcription(request, response_id):
-    """Manually trigger transcription for a specific response"""
-    try:
-        response = CallResponse.objects.get(id=response_id)
-        
-        if response.transcript_status == 'completed':
-            messages.warning(request, "Transcription is already completed")
-            return redirect('dashboard')
-            
-        success = update_transcript_for_response(response)
-        
-        if success:
-            messages.success(request, "Transcription updated successfully")
-        else:
-            messages.warning(request, "Transcription is still processing or failed")
-            
-        return redirect('dashboard')
-        
-    except CallResponse.DoesNotExist:
-        messages.error(request, "Response not found")
-        return redirect('dashboard')
-    except Exception as e:
-        logger.error(f"Error retrying transcription: {str(e)}")
-        messages.error(request, "Error updating transcription")
-        return redirect('dashboard')
+        logger.error(f"Error fetching transcript: {str(e)}")
+        return None
 
 # Handle recorded answer
 @csrf_exempt
@@ -529,41 +403,55 @@ def view_response(request, response_id):
     response = CallResponse.objects.get(id=response_id)
     return render(request, 'call/view_response.html', {'response': response})
 
-@login_required
 def export_to_excel(request):
-    """Export call responses to Excel"""
     try:
-        # Get all completed responses
-        responses = CallResponse.objects.filter(call_status='completed').order_by('created_at')
+        # Get all responses
+        responses = CallResponse.objects.all().order_by('-created_at')
         
         # Create a DataFrame
         data = []
         for response in responses:
             data.append({
                 'Phone Number': response.phone_number,
-                'Question': response.question,
-                'Response': response.response,
-                'Transcript': response.transcript,
-                'Recording Duration': response.recording_duration,
-                'Created At': response.created_at
+                'Question': response.question or 'N/A',
+                'Response': response.response or 'N/A',
+                'Recording URL': response.recording_url or 'N/A',
+                'Recording Duration (seconds)': response.recording_duration or 'N/A',
+                'Transcript': response.transcript or 'N/A',
+                'Transcript Status': response.transcript_status,
+                'Call SID': response.call_sid or 'N/A',
+                'Call Duration (seconds)': response.call_duration or 'N/A',
+                'Call Status': response.call_status or 'N/A',
+                'Created At': response.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'Updated At': response.updated_at.strftime('%Y-%m-%d %H:%M:%S')
             })
         
         df = pd.DataFrame(data)
         
-        # Create Excel file in memory
+        # Create Excel writer
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, sheet_name='Responses', index=False)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Call Responses', index=False)
             
-            # Auto-adjust columns width
-            worksheet = writer.sheets['Responses']
-            for i, col in enumerate(df.columns):
-                max_length = max(df[col].astype(str).apply(len).max(), len(col)) + 2
-                worksheet.set_column(i, i, max_length)
+            # Get workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Call Responses']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column = [cell for cell in column]
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
         
+        # Set up the response
         output.seek(0)
-        
-        # Create the response
         response = HttpResponse(
             output.read(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -574,59 +462,77 @@ def export_to_excel(request):
         
     except Exception as e:
         logger.error(f"Error exporting to Excel: {str(e)}")
-        messages.error(request, "Error exporting data to Excel")
+        messages.error(request, f"Error exporting to Excel: {str(e)}")
         return redirect('dashboard')
 
 @csrf_exempt
 def voice(request):
-    """Handle voice responses and ask next question"""
+    """Handle voice response and ask next question"""
     try:
         # Get the call SID from the request
         call_sid = request.POST.get('CallSid')
         if not call_sid:
             logger.error("No CallSid provided in request")
             return HttpResponse('No CallSid provided', status=400)
-            
-        # Get the response ID from the URL
+
+        # Get the response ID from the URL parameters
         response_id = request.GET.get('response_id')
         if not response_id:
             logger.error("No response_id provided in request")
             return HttpResponse('No response_id provided', status=400)
-            
-        # Get the current response
-        try:
-            current_response = CallResponse.objects.get(id=response_id)
-        except CallResponse.DoesNotExist:
-            logger.error(f"Response {response_id} not found")
-            return HttpResponse('Response not found', status=404)
-            
-        # Get the speech result
-        speech_result = request.POST.get('SpeechResult', '').strip()
-        if speech_result:
-            logger.info(f"Received answer for question {current_response.question}: {speech_result}")
-            current_response.response = speech_result
-            current_response.save()
-            
-            # Save to CSV for backup
-            with open('responses.csv', 'a', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow([current_response.question, speech_result])
+
+        logger.info(f"Processing voice response for call {call_sid} with response_id {response_id}")
         
-        # Get the current question index from the session
+        # Initialize Twilio client
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        
+        # Get call details
+        call = client.calls(call_sid).fetch()
+        
+        # Get the recording SID from the request
+        recording_sid = request.POST.get('RecordingSid')
+        if recording_sid:
+            # Update the previous response with recording details
+            try:
+                response = CallResponse.objects.get(id=response_id)
+                recording = client.recordings(recording_sid).fetch()
+                response.recording_sid = recording_sid
+                response.recording_url = recording.uri
+                response.recording_duration = recording.duration
+                response.save()
+
+                # Get the transcript from Twilio
+                try:
+                    # Get the recording's transcript
+                    transcript = client.transcriptions.list(recording_sid=recording_sid)
+                    if transcript:
+                        response.transcript = transcript[0].transcription_text
+                        response.transcript_status = 'completed'
+                        logger.info(f"Transcript saved for recording {recording_sid}")
+                    else:
+                        response.transcript_status = 'pending'
+                        logger.info(f"No transcript available for recording {recording_sid}")
+                except Exception as e:
+                    logger.error(f"Error fetching transcript: {str(e)}")
+                    response.transcript_status = 'failed'
+                response.save()
+            except CallResponse.DoesNotExist:
+                logger.error(f"Response not found: {response_id}")
+        
+        # Get current question index from session or initialize to 0
         current_index = request.session.get('current_question_index', 0)
         
-        # Create TwiML response
+        # Create response object
         resp = VoiceResponse()
         
         # Check if we have more questions to ask
-        if current_index + 1 < len(INTERVIEW_QUESTIONS):
-            # Get the next question
-            next_index = current_index + 1
-            question = INTERVIEW_QUESTIONS[next_index]
+        if current_index < len(INTERVIEW_QUESTIONS):
+            # Get the current question
+            question = INTERVIEW_QUESTIONS[current_index]
             
             # Create a new CallResponse record
             response = CallResponse.objects.create(
-                phone_number=current_response.phone_number,
+                phone_number=call.to,
                 call_sid=call_sid,
                 question=question,
                 call_status='in-progress'
@@ -635,35 +541,90 @@ def voice(request):
             # Store the response ID in the session
             request.session['response_id'] = response.id
             
-            # Update the question index for next time
-            request.session['current_question_index'] = next_index
+            # Add a short pause before asking the question
+            resp.pause(length=0.5)
             
             # Ask the question
-            gather = Gather(input='speech', action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}', 
-                           method='POST', timeout=5)
-            gather.say(question, voice='Polly.Amy')
-            resp.append(gather)
+            resp.say(question, voice='Polly.Amy')
             
-            logger.info(f"Generated TwiML for question {next_index + 1} for call {call_sid}")
+            # Add a short pause after the question
+            resp.pause(length=0.5)
+            
+            # Record the response
+            resp.record(
+                action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
+                maxLength='30',
+                playBeep=False,
+                trim='trim-silence'
+            )
+            
+            # Increment the question index for next time
+            request.session['current_question_index'] = current_index + 1
+            
+            logger.info(f"Generated TwiML for next question {current_index + 1} for call {call_sid}")
+            
         else:
             # All questions have been asked
-            resp.say("Thank you for your time. The interview is now complete.", voice='Polly.Amy')
+            resp.say("Thank you for your time. We will review your responses and get back to you soon.", voice='Polly.Amy')
             
             # Update all responses for this call to completed
             CallResponse.objects.filter(call_sid=call_sid).update(call_status='completed')
             
-            # Clean up session
-            request.session.flush()
+            # Reset the session
+            request.session['current_question_index'] = 0
+            if 'response_id' in request.session:
+                del request.session['response_id']
             
-            logger.info(f"Completed call {call_sid}")
+            logger.info(f"Call {call_sid} completed successfully")
         
         return HttpResponse(str(resp))
         
     except Exception as e:
         logger.error(f"Error in voice view: {str(e)}")
         resp = VoiceResponse()
-        resp.say("We're sorry, but there was an error processing your response. Please try again later.", voice='Polly.Amy')
+        resp.say("We're sorry, but there was an error processing your call. Please try again later.", voice='Polly.Amy')
         return HttpResponse(str(resp))
+
+@csrf_exempt
+def transcription_webhook(request):
+    """Handle transcription webhook from Twilio"""
+    if request.method == "POST":
+        try:
+            # Get transcription data from request
+            transcript_text = request.POST.get('TranscriptionText')
+            recording_url = request.POST.get('RecordingUrl')
+            call_sid = request.POST.get('CallSid')
+            recording_sid = request.POST.get('RecordingSid')
+            
+            logger.info(f"Received transcription for CallSID: {call_sid}")
+            logger.info(f"Transcript: {transcript_text}")
+            logger.info(f"Recording URL: {recording_url}")
+            
+            # Find or create CallResponse
+            response, created = CallResponse.objects.get_or_create(
+                recording_sid=recording_sid,
+                defaults={
+                    'phone_number': call_sid,  # Using call_sid temporarily
+                    'question': 'Auto-transcribed response',
+                    'recording_url': recording_url,
+                    'transcript': transcript_text,
+                    'transcript_status': 'completed'
+                }
+            )
+            
+            if not created:
+                # Update existing response
+                response.transcript = transcript_text
+                response.transcript_status = 'completed'
+                response.save()
+            
+            return HttpResponse("Transcription received", status=200)
+            
+        except Exception as e:
+            logger.error(f"Error in transcription webhook: {str(e)}")
+            return HttpResponse(f"Error processing transcription: {str(e)}", status=500)
+            
+    return HttpResponse("Invalid request method", status=400)
 
 @csrf_exempt
 def call_status(request):
@@ -681,34 +642,3 @@ def call_status(request):
     except Exception as e:
         logger.error(f"Error in call_status view: {str(e)}")
         return HttpResponse(status=500)
-
-@login_required
-def download_csv(request):
-    """Download responses as CSV"""
-    try:
-        # Get all completed responses
-        responses = CallResponse.objects.filter(call_status='completed').order_by('created_at')
-        
-        # Create the response
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename=call_responses.csv'
-        
-        # Create CSV writer
-        writer = csv.writer(response)
-        writer.writerow(['Question', 'Response', 'Transcript', 'Created At'])
-        
-        # Write data
-        for response_obj in responses:
-            writer.writerow([
-                response_obj.question,
-                response_obj.response,
-                response_obj.transcript,
-                response_obj.created_at.strftime('%Y-%m-%d %H:%M:%S')
-            ])
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error downloading CSV: {str(e)}")
-        messages.error(request, "Error downloading CSV file")
-        return redirect('dashboard')
