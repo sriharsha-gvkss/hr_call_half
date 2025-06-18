@@ -1,16 +1,13 @@
 {% extends 'call/base.html' %}
 
 {% block content %}
-<div class="container mt-5">
-    <h2>Call Dashboard</h2>
-    
-    <!-- Statistics Cards -->
+<div class="container mt-4">
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Calls</h5>
-                    <p class="card-text display-4">{{ total_calls }}</p>
+                    <h2 class="card-text">{{ total_calls }}</h2>
                 </div>
             </div>
         </div>
@@ -18,7 +15,7 @@
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h5 class="card-title">Completed Calls</h5>
-                    <p class="card-text display-4">{{ completed_calls }}</p>
+                    <h2 class="card-text">{{ completed_calls }}</h2>
                 </div>
             </div>
         </div>
@@ -26,86 +23,82 @@
             <div class="card bg-info text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Responses</h5>
-                    <p class="card-text display-4">{{ total_responses }}</p>
+                    <h2 class="card-text">{{ total_responses }}</h2>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card bg-warning text-white">
                 <div class="card-body">
-                    <h5 class="card-title">Actions</h5>
-                    <a href="{% url 'export_excel' %}" class="btn btn-light">Export to Excel</a>
+                    <h5 class="card-title">Total Transcripts</h5>
+                    <h2 class="card-text">{{ completed_transcripts }}</h2>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Make Call Form -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h3>Make a Call</h3>
-        </div>
-        <div class="card-body">
-            <form method="post" action="{% url 'make_call' %}">
-                {% csrf_token %}
-                <div class="form-group">
-                    <label for="phone_number">Phone Number</label>
-                    <input type="tel" class="form-control" id="phone_number" name="phone_number" required>
-                    <small class="form-text text-muted">Enter the phone number with country code (e.g., +91XXXXXXXXXX)</small>
+    <div class="row mb-4">
+        <div class="col">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Call Records</h5>
+                    <a href="{% url 'export_excel' %}" class="btn btn-success">
+                        <i class="fas fa-file-excel"></i> Export to Excel
+                    </a>
                 </div>
-                <button type="submit" class="btn btn-primary">Make Call</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Call Records -->
-    <div class="card">
-        <div class="card-header">
-            <h3>Call Records</h3>
-        </div>
-        <div class="card-body">
-            {% if calls %}
-                {% for call in calls %}
-                    <div class="card mb-3">
-                        <div class="card-header">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <h5 class="mb-0">Call to {{ call.phone_number }}</h5>
-                                    <small class="text-muted">Call SID: {{ call.call_sid }}</small>
+                <div class="card-body">
+                    {% if call_records %}
+                        {% for call in call_records %}
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <strong>Phone:</strong> {{ call.phone_number }}
+                                            <span class="badge {% if call.call_status == 'completed' %}bg-success{% else %}bg-warning{% endif %} ms-2">
+                                                {{ call.call_status }}
+                                            </span>
+                                        </div>
+                                        <small class="text-muted">
+                                            {{ call.created_at|date:"M d, Y H:i:s" }}
+                                        </small>
+                                    </div>
                                 </div>
-                                <div>
-                                    <span class="badge {% if call.status == 'completed' %}bg-success{% else %}bg-warning{% endif %}">
-                                        {{ call.status }}
-                                    </span>
-                                    <small class="text-muted ms-2">{{ call.created_at|date:"F j, Y, g:i a" }}</small>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6>Call Details</h6>
+                                            <p><strong>Call SID:</strong> {{ call.call_sid }}</p>
+                                            <p><strong>Duration:</strong> {{ call.recording_duration|default:"N/A" }} seconds</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <h6>Responses</h6>
+                                            {% for response in call.responses.all %}
+                                                <div class="mb-3">
+                                                    <p><strong>Q:</strong> {{ response.question }}</p>
+                                                    {% if response.transcript %}
+                                                        <p><strong>Transcript:</strong> {{ response.transcript }}</p>
+                                                    {% endif %}
+                                                    {% if response.recording_url %}
+                                                        <audio controls class="w-100">
+                                                            <source src="{{ response.recording_url }}" type="audio/mpeg">
+                                                            Your browser does not support the audio element.
+                                                        </audio>
+                                                    {% endif %}
+                                                    <small class="text-muted">
+                                                        {{ response.created_at|date:"M d, Y H:i:s" }}
+                                                    </small>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="card-body">
-                            {% for response in call.responses %}
-                                <div class="mb-3 p-3 border rounded">
-                                    <h6>Question: {{ response.question }}</h6>
-                                    {% if response.transcript %}
-                                        <p><strong>Transcript:</strong> {{ response.transcript }}</p>
-                                    {% endif %}
-                                    {% if response.recording_url %}
-                                        <div class="mt-2">
-                                            <audio controls class="w-100">
-                                                <source src="{{ response.recording_url }}" type="audio/mpeg">
-                                                Your browser does not support the audio element.
-                                            </audio>
-                                            <small class="text-muted">Duration: {{ response.recording_duration }} seconds</small>
-                                        </div>
-                                    {% endif %}
-                                    <small class="text-muted">Recorded at: {{ response.created_at|date:"F j, Y, g:i a" }}</small>
-                                </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                {% endfor %}
-            {% else %}
-                <p class="text-center">No call records found.</p>
-            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-center">No call records found.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 </div>

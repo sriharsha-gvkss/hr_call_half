@@ -18,6 +18,7 @@ import time
 import json
 from io import BytesIO
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,9 @@ def answer(request):
         
         # Get call details
         call = client.calls(call_sid).fetch()
+        
+        # Reset session for new call
+        request.session['current_question_index'] = 0
         
         # Get the first question
         question = INTERVIEW_QUESTIONS[0]
@@ -293,57 +297,47 @@ def recording_status(request):
         return HttpResponse(str(resp))
 
 # HR Dashboard
+@login_required
 def dashboard(request):
-    """Display dashboard with call records"""
+    """Display call dashboard"""
     try:
-        # Get all call responses, ordered by most recent first
-        responses = CallResponse.objects.all().order_by('-created_at')
+        # Get all calls with their responses
+        calls = CallResponse.objects.values('call_sid').distinct()
+        call_records = []
         
-        # Group responses by call_sid
-        call_groups = {}
-        for response in responses:
-            if response.call_sid not in call_groups:
-                call_groups[response.call_sid] = {
-                    'phone_number': response.phone_number,
-                    'call_sid': response.call_sid,
-                    'status': response.call_status,
-                    'created_at': response.created_at,
-                    'responses': []
-                }
-            call_groups[response.call_sid]['responses'].append({
-                'question': response.question,
-                'transcript': response.transcript,
-                'recording_url': response.recording_url,
-                'recording_duration': response.recording_duration,
-                'transcript_status': response.transcript_status,
-                'created_at': response.created_at
-            })
+        for call in calls:
+            # Get the first response for each call to get call details
+            first_response = CallResponse.objects.filter(call_sid=call['call_sid']).first()
+            if first_response:
+                call_records.append({
+                    'phone_number': first_response.phone_number,
+                    'call_sid': first_response.call_sid,
+                    'call_status': first_response.call_status,
+                    'created_at': first_response.created_at,
+                    'recording_duration': first_response.recording_duration,
+                    'responses': CallResponse.objects.filter(call_sid=call['call_sid']).order_by('created_at')
+                })
         
-        # Convert to list for template
-        calls = list(call_groups.values())
-        
-        # Get total calls
-        total_calls = len(calls)
-        
-        # Get completed calls
-        completed_calls = sum(1 for call in calls if call['status'] == 'completed')
-        
-        # Get total responses
-        total_responses = sum(len(call['responses']) for call in calls)
+        # Calculate statistics
+        total_calls = len(call_records)
+        completed_calls = CallResponse.objects.filter(call_status='completed').values('call_sid').distinct().count()
+        total_responses = CallResponse.objects.count()
+        completed_transcripts = CallResponse.objects.filter(transcript_status='completed').count()
         
         context = {
-            'calls': calls,
+            'call_records': call_records,
             'total_calls': total_calls,
             'completed_calls': completed_calls,
-            'total_responses': total_responses
+            'total_responses': total_responses,
+            'completed_transcripts': completed_transcripts
         }
         
         return render(request, 'call/dashboard.html', context)
         
     except Exception as e:
         logger.error(f"Error in dashboard view: {str(e)}")
-        messages.error(request, f"Error loading dashboard: {str(e)}")
-        return render(request, 'call/dashboard.html', {'calls': []})
+        messages.error(request, "Error loading dashboard")
+        return redirect('home')
 
 def index(request):
     """Render the main page"""
@@ -493,23 +487,23 @@ def voice(request):
                 response.recording_duration = recording.duration
                 response.save()
 
-                # Try to get the transcript
+                # Get the transcript from Twilio
                 try:
+                    # Get the recording's transcript
                     transcript = client.transcriptions.list(recording_sid=recording_sid)
                     if transcript:
                         response.transcript = transcript[0].transcription_text
                         response.transcript_status = 'completed'
+                        logger.info(f"Transcript saved for recording {recording_sid}")
                     else:
                         response.transcript_status = 'pending'
+                        logger.info(f"No transcript available for recording {recording_sid}")
                 except Exception as e:
                     logger.error(f"Error fetching transcript: {str(e)}")
                     response.transcript_status = 'failed'
                 response.save()
             except CallResponse.DoesNotExist:
                 logger.error(f"Response not found: {response_id}")
-        
-        # Get questions from session or use default
-        questions = request.session.get('questions', INTERVIEW_QUESTIONS)
         
         # Get current question index from session or initialize to 0
         current_index = request.session.get('current_question_index', 0)
@@ -518,9 +512,9 @@ def voice(request):
         resp = VoiceResponse()
         
         # Check if we have more questions to ask
-        if current_index < len(questions):
+        if current_index < len(INTERVIEW_QUESTIONS):
             # Get the current question
-            question = questions[current_index]
+            question = INTERVIEW_QUESTIONS[current_index]
             
             # Create a new CallResponse record
             response = CallResponse.objects.create(
@@ -566,8 +560,6 @@ def voice(request):
             request.session['current_question_index'] = 0
             if 'response_id' in request.session:
                 del request.session['response_id']
-            if 'questions' in request.session:
-                del request.session['questions']
             
             logger.info(f"Call {call_sid} completed successfully")
         
