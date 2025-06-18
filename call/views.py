@@ -251,18 +251,24 @@ def recording_status(request):
             # Create a new VoiceResponse for the next question
             resp = VoiceResponse()
             
-            # Check if we have more questions to ask
-            current_index = request.session.get('current_question_index', 0)
+            # Get questions from session or use default
             questions = request.session.get('questions', INTERVIEW_QUESTIONS)
+            
+            # Get current question index from session or initialize to 0
+            current_index = request.session.get('current_question_index', 0)
             
             if current_index < len(questions):
                 # Ask the next question
                 resp.say(questions[current_index], voice='Polly.Amy')
                 resp.record(
-                    action=f'/recording_status/?response_id={response.id}',
+                    action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
                     maxLength='30',
-                    playBeep=False
+                    playBeep=False,
+                    trim='trim-silence'
                 )
+                
+                # Increment the question index for next time
+                request.session['current_question_index'] = current_index + 1
             else:
                 # All questions have been asked
                 resp.say("Thank you for your time. We will review your responses and get back to you soon.", voice='Polly.Amy')
