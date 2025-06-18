@@ -197,97 +197,96 @@ def fetch_transcript(recording_sid):
 @csrf_exempt
 @require_http_methods(["POST"])
 def recording_status(request):
+    """Handle recording status and ask next question"""
     try:
-        # Get the recording SID from the request
-        recording_sid = request.POST.get('RecordingSid')
-        if not recording_sid:
-            return HttpResponse('No RecordingSid provided', status=400)
-
         # Get the call SID from the request
         call_sid = request.POST.get('CallSid')
         if not call_sid:
+            logger.error("No CallSid provided in request")
             return HttpResponse('No CallSid provided', status=400)
 
         # Get the response ID from the URL parameters
         response_id = request.GET.get('response_id')
         if not response_id:
+            logger.error("No response_id provided in request")
             return HttpResponse('No response_id provided', status=400)
 
+        # Get the recording SID from the request
+        recording_sid = request.POST.get('RecordingSid')
+        if not recording_sid:
+            logger.error("No RecordingSid provided in request")
+            return HttpResponse('No RecordingSid provided', status=400)
+
+        logger.info(f"Processing recording {recording_sid} for call {call_sid} with response_id {response_id}")
+        
         # Initialize Twilio client
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
         # Get call details
         call = client.calls(call_sid).fetch()
         
-        # Get recording details
-        recording = client.recordings(recording_sid).fetch()
-        
-        # Find the CallResponse record
+        # Update the response with recording details
         try:
             response = CallResponse.objects.get(id=response_id)
-        except CallResponse.DoesNotExist:
-            return HttpResponse('CallResponse not found', status=404)
+            recording = client.recordings(recording_sid).fetch()
+            response.recording_sid = recording_sid
+            response.recording_url = recording.uri
+            response.recording_duration = recording.duration
+            response.save()
 
-        # Update the response with recording details
-        response.recording_sid = recording_sid
-        response.recording_url = recording.uri
-        response.recording_duration = recording.duration
-        response.call_status = call.status
-        response.call_duration = call.duration
-        response.save()
+            # Try to get the transcript
+            try:
+                # Get transcript for this recording
+                transcript = client.transcriptions.list(recording_sid=recording_sid)
+                if transcript:
+                    response.transcript = transcript[0].transcription_text
+                    response.transcript_status = 'completed'
+                else:
+                    response.transcript_status = 'pending'
+            except Exception as e:
+                logger.error(f"Error fetching transcript for recording {recording_sid}: {str(e)}")
+                response.transcript_status = 'failed'
+            response.save()
 
-        # Try to get the transcript
-        try:
-            # Get transcript for this recording
-            transcript = client.transcriptions.list(recording_sid=recording_sid)
-            if transcript:
-                response.transcript = transcript[0].transcription_text
-                response.transcript_status = 'completed'
+            # Create a new VoiceResponse for the next question
+            resp = VoiceResponse()
+            
+            # Check if we have more questions to ask
+            current_index = request.session.get('current_question_index', 0)
+            questions = request.session.get('questions', INTERVIEW_QUESTIONS)
+            
+            if current_index < len(questions):
+                # Ask the next question
+                resp.say(questions[current_index], voice='Polly.Amy')
+                resp.record(
+                    action=f'/recording_status/?response_id={response.id}',
+                    maxLength='30',
+                    playBeep=False
+                )
             else:
-                response.transcript_status = 'pending'
-        except Exception as e:
-            logger.error(f"Error fetching transcript for recording {recording_sid}: {str(e)}")
-            response.transcript_status = 'failed'
-        response.save()
-
-        # Create a new VoiceResponse for the next question
-        resp = VoiceResponse()
-        
-        # Check if we have more questions to ask
-        current_index = request.session.get('current_question_index', 0)
-        questions = [
-            "hi what is your full name?"
-            "What is your work experience?",
-            "What was your previous job role?",
-            "Why do you want to join our company?"
-        ]
-        
-        if current_index < len(questions):
-            # Ask the next question
-            resp.say(questions[current_index], voice='Polly.Amy')
-            resp.record(
-                action=f'/recording_status/?response_id={response.id}',
-                maxLength='30',
-                playBeep=False
-            )
-        else:
-            # All questions have been asked
-            resp.say("Thank you for your time. We will review your responses and get back to you soon.", voice='Polly.Amy')
+                # All questions have been asked
+                resp.say("Thank you for your time. We will review your responses and get back to you soon.", voice='Polly.Amy')
+                
+                # Update all responses for this call to completed
+                CallResponse.objects.filter(call_sid=call_sid).update(call_status='completed')
+                
+                # Reset the session
+                request.session['current_question_index'] = 0
+                if 'response_id' in request.session:
+                    del request.session['response_id']
+                if 'questions' in request.session:
+                    del request.session['questions']
             
-            # Update all responses for this call to completed
-            CallResponse.objects.filter(call_sid=call_sid).update(call_status='completed')
+            return HttpResponse(str(resp))
             
-            # Reset the session
-            request.session['current_question_index'] = 0
-            if 'response_id' in request.session:
-                del request.session['response_id']
-
-        return HttpResponse(str(resp))
-        
+        except CallResponse.DoesNotExist:
+            logger.error(f"Response not found: {response_id}")
+            return HttpResponse('Response not found', status=404)
+            
     except Exception as e:
-        logger.error(f"Error in recording_status: {str(e)}")
+        logger.error(f"Error in recording_status view: {str(e)}")
         resp = VoiceResponse()
-        resp.say("We're sorry, but there was an error processing your response. Please try again later.", voice='Polly.Amy')
+        resp.say("We're sorry, but there was an error processing your call. Please try again later.", voice='Polly.Amy')
         return HttpResponse(str(resp))
 
 # HR Dashboard
