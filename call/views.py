@@ -65,7 +65,10 @@ def make_call(request):
         # Create Twilio client
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
-        # Create webhook URL with encoded question
+        # Reset session for new call
+        request.session['current_question_index'] = 0
+        
+        # Create webhook URL
         webhook_url = f"{settings.PUBLIC_URL}/answer/"
         
         # Make the call
@@ -181,30 +184,11 @@ def recording_status(request):
             
             logger.info(f"Saved recording for response {response_id}")
             
-            # Get questions from session
-            questions = request.session.get('questions', [])
+            # Check if we need to ask more questions
             current_index = request.session.get('current_question_index', 0)
-            
-            if current_index < len(questions) - 1:
-                # Move to next question
-                request.session['current_question_index'] = current_index + 1
-                next_question = questions[current_index + 1]
-                
-                # Create new response for next question
-                new_response = CallResponse.objects.create(
-                    phone_number=response.phone_number,
-                    question=next_question
-                )
-                request.session['response_id'] = new_response.id
-                
-                resp = VoiceResponse()
-                resp.say(next_question, voice='Polly.Amy')
-                resp.record(
-                    action=f'/recording_status/?response_id={new_response.id}',
-                    maxLength='30',
-                    playBeep=False
-                )
-                return HttpResponse(str(resp))
+            if current_index < 4:  # We have 4 questions total
+                # Redirect to voice view for next question
+                return redirect('voice')
             else:
                 # All questions answered
                 resp = VoiceResponse()
@@ -327,22 +311,50 @@ def voice(request):
     try:
         response = VoiceResponse()
         
-        # Get the question from the URL parameter
-        question = request.GET.get('q', '')
-        if not question:
-            response.say("No question provided")
-            return HttpResponse(str(response))
-            
-        # Say the question
-        response.say(f"Please answer the following question after the beep: {question}")
+        # Define the sequence of default questions
+        questions = [
+            "Hi, please tell us your full name.",
+            "What is your work experience?",
+            "What was your previous job role?",
+            "Why do you want to join our company?"
+        ]
         
-        # Record the response with transcription enabled
-        response.record(
-            transcribe=True,
-            transcribeCallback='/transcription/',
-            maxLength=60,
-            playBeep=True
-        )
+        # Get the current question index from the session or start with 0
+        current_index = request.session.get('current_question_index', 0)
+        
+        if current_index < len(questions):
+            # Get the current question
+            question = questions[current_index]
+            
+            # Create a new response record
+            call_response = CallResponse.objects.create(
+                phone_number=request.POST.get('From', 'Unknown'),
+                question=question
+            )
+            
+            # Store the response ID in the session
+            request.session['response_id'] = call_response.id
+            
+            # Say the question
+            response.say(question, voice='Polly.Amy')
+            
+            # Record the response with transcription enabled
+            response.record(
+                action=f'/recording-status/?response_id={call_response.id}',
+                transcribe=True,
+                transcribeCallback='/transcription/',
+                maxLength=60,
+                playBeep=True
+            )
+            
+            # Increment the question index for next time
+            request.session['current_question_index'] = current_index + 1
+            
+        else:
+            # All questions have been asked
+            response.say("Thank you for your responses. We will review them and get back to you soon. Goodbye!")
+            # Reset the session
+            request.session['current_question_index'] = 0
         
         return HttpResponse(str(response))
         
