@@ -71,7 +71,7 @@ def make_call(request):
         # Reset session for new call
         request.session['current_question_index'] = 0
         
-        # Create webhook URL
+        # Create webhook URL using settings
         webhook_url = f"{settings.PUBLIC_URL}/answer/"
         
         # Make the call
@@ -108,10 +108,12 @@ def answer(request):
         # Get the call SID from the request
         call_sid = request.POST.get('CallSid')
         if not call_sid:
+            logger.error("No CallSid provided in request")
             return HttpResponse('No CallSid provided', status=400)
 
         # Get the phone number from the request
         phone_number = request.POST.get('To', '')
+        logger.info(f"Received call from {phone_number} with SID: {call_sid}")
         
         # Initialize Twilio client
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -148,16 +150,24 @@ def answer(request):
         # Create TwiML response
         resp = VoiceResponse()
         
+        # Add a pause before asking the question
+        resp.pause(length=1)
+        
         # Ask the question
         resp.say(question, voice='Polly.Amy')
+        
+        # Add a pause after the question
+        resp.pause(length=1)
         
         # Record the response
         resp.record(
             action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
             maxLength='30',
-            playBeep=False
+            playBeep=False,
+            trim='trim-silence'
         )
         
+        logger.info(f"Generated TwiML response for call {call_sid}")
         return HttpResponse(str(resp))
         
     except Exception as e:
@@ -343,12 +353,45 @@ def index(request):
     return render(request, 'call/dashboard.html')
 
 def test_config(request):
-    config = {
-        'TWILIO_ACCOUNT_SID': os.getenv('TWILIO_ACCOUNT_SID'),
-        'TWILIO_AUTH_TOKEN': os.getenv('TWILIO_AUTH_TOKEN'),
-        'TWILIO_PHONE_NUMBER': os.getenv('TWILIO_PHONE_NUMBER'),
-    }
-    return JsonResponse(config)
+    """Test Twilio configuration and webhook URLs"""
+    try:
+        # Test Twilio credentials
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        account = client.api.accounts(settings.TWILIO_ACCOUNT_SID).fetch()
+        
+        # Get webhook URLs
+        answer_url = f"{settings.PUBLIC_URL}/answer/"
+        voice_url = f"{settings.PUBLIC_URL}/voice/"
+        
+        # Test database connection
+        call_count = CallResponse.objects.count()
+        
+        config_info = {
+            'twilio_account_sid': settings.TWILIO_ACCOUNT_SID,
+            'twilio_auth_token': 'Configured' if settings.TWILIO_AUTH_TOKEN else 'Not Configured',
+            'twilio_phone_number': settings.TWILIO_PHONE_NUMBER,
+            'public_url': settings.PUBLIC_URL,
+            'answer_webhook': answer_url,
+            'voice_webhook': voice_url,
+            'database_connection': 'Connected' if call_count is not None else 'Error',
+            'total_calls': call_count,
+            'debug_mode': settings.DEBUG,
+        }
+        
+        return render(request, 'call/test_config.html', {'config': config_info})
+        
+    except Exception as e:
+        logger.error(f"Error in test_config: {str(e)}")
+        return render(request, 'call/test_config.html', {
+            'error': str(e),
+            'config': {
+                'twilio_account_sid': settings.TWILIO_ACCOUNT_SID,
+                'twilio_auth_token': 'Configured' if settings.TWILIO_AUTH_TOKEN else 'Not Configured',
+                'twilio_phone_number': settings.TWILIO_PHONE_NUMBER,
+                'public_url': settings.PUBLIC_URL,
+                'debug_mode': settings.DEBUG,
+            }
+        })
 
 def view_response(request, response_id):
     """Display the details of a specific response"""
@@ -424,13 +467,17 @@ def voice(request):
         # Get the call SID from the request
         call_sid = request.POST.get('CallSid')
         if not call_sid:
+            logger.error("No CallSid provided in request")
             return HttpResponse('No CallSid provided', status=400)
 
         # Get the response ID from the URL parameters
         response_id = request.GET.get('response_id')
         if not response_id:
+            logger.error("No response_id provided in request")
             return HttpResponse('No response_id provided', status=400)
 
+        logger.info(f"Processing voice response for call {call_sid} with response_id {response_id}")
+        
         # Initialize Twilio client
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
@@ -494,18 +541,27 @@ def voice(request):
             # Store the response ID in the session
             request.session['response_id'] = response.id
             
+            # Add a pause before asking the question
+            resp.pause(length=1)
+            
             # Ask the question
             resp.say(question, voice='Polly.Amy')
+            
+            # Add a pause after the question
+            resp.pause(length=1)
             
             # Record the response
             resp.record(
                 action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
                 maxLength='30',
-                playBeep=False
+                playBeep=False,
+                trim='trim-silence'
             )
             
             # Increment the question index for next time
             request.session['current_question_index'] = current_index + 1
+            
+            logger.info(f"Generated TwiML for next question {current_index + 1} for call {call_sid}")
             
         else:
             # All questions have been asked
@@ -520,6 +576,8 @@ def voice(request):
                 del request.session['response_id']
             if 'questions' in request.session:
                 del request.session['questions']
+            
+            logger.info(f"Call {call_sid} completed successfully")
         
         return HttpResponse(str(resp))
         

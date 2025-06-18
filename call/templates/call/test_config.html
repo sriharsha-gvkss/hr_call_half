@@ -1,0 +1,72 @@
+{% extends 'call/base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>System Configuration Test</h2>
+    
+    {% if error %}
+    <div class="alert alert-danger">
+        <h4>Error</h4>
+        <p>{{ error }}</p>
+    </div>
+    {% endif %}
+    
+    <div class="card">
+        <div class="card-header">
+            <h3>Configuration Details</h3>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <th>Twilio Account SID</th>
+                        <td>{{ config.twilio_account_sid }}</td>
+                    </tr>
+                    <tr>
+                        <th>Twilio Auth Token</th>
+                        <td>{{ config.twilio_auth_token }}</td>
+                    </tr>
+                    <tr>
+                        <th>Twilio Phone Number</th>
+                        <td>{{ config.twilio_phone_number }}</td>
+                    </tr>
+                    <tr>
+                        <th>Public URL</th>
+                        <td>{{ config.public_url }}</td>
+                    </tr>
+                    <tr>
+                        <th>Answer Webhook</th>
+                        <td>{{ config.answer_webhook }}</td>
+                    </tr>
+                    <tr>
+                        <th>Voice Webhook</th>
+                        <td>{{ config.voice_webhook }}</td>
+                    </tr>
+                    <tr>
+                        <th>Database Connection</th>
+                        <td>{{ config.database_connection }}</td>
+                    </tr>
+                    <tr>
+                        <th>Total Calls</th>
+                        <td>{{ config.total_calls }}</td>
+                    </tr>
+                    <tr>
+                        <th>Debug Mode</th>
+                        <td>{{ config.debug_mode }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="mt-4">
+        <h3>Testing Instructions</h3>
+        <ol>
+            <li>Make sure all configuration values are set correctly</li>
+            <li>Verify that the Public URL is accessible from the internet</li>
+            <li>Test the webhook URLs by making a call to your Twilio number</li>
+            <li>Check the logs for any errors during the call</li>
+        </ol>
+    </div>
+</div>
+{% endblock %} 
