@@ -19,6 +19,7 @@ import json
 from io import BytesIO
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+import csv
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +35,21 @@ client = Client(
 # Public URL for webhooks - Replace this with your actual public URL
 PUBLIC_URL = "https://call-1-u39m.onrender.com"  # Update this with your Render URL
 
-# Define the sequence of questions
-INTERVIEW_QUESTIONS = [
-    "Hi, what is your full name?",
-    "What is your work experience?",
-    "What was your previous job role?",
-    "Why do you want to join our company?"
-]
+# Load questions from JSON file
+def load_questions():
+    try:
+        with open('questions.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.error("questions.json not found, using default questions")
+        return [
+            "Hi, what is your full name?",
+            "What is your work experience?",
+            "What was your previous job role?",
+            "Why do you want to join our company?"
+        ]
+
+INTERVIEW_QUESTIONS = load_questions()
 
 def format_phone_number(phone_number):
     """Format phone number to E.164 format"""
@@ -126,15 +135,16 @@ def answer(request):
         phone_number = request.POST.get('To', '')
         logger.info(f"Received call from {phone_number} with SID: {call_sid}")
         
-        # Initialize Twilio client
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        
-        # Get call details
-        call = client.calls(call_sid).fetch()
-        
         # Initialize session state for this call
         request.session['current_question_index'] = 0
         request.session['call_sid'] = call_sid
+        
+        # Create TwiML response
+        resp = VoiceResponse()
+        
+        # Welcome message
+        resp.say("Welcome to the HR interview. Let's begin.", voice='Polly.Amy')
+        resp.pause(length=1)
         
         # Get the first question
         question = INTERVIEW_QUESTIONS[0]
@@ -150,25 +160,11 @@ def answer(request):
         # Store the response ID in the session
         request.session['response_id'] = response.id
         
-        # Create TwiML response
-        resp = VoiceResponse()
-        
-        # Add a short pause before asking the question
-        resp.pause(length=0.5)
-        
         # Ask the question
-        resp.say(question, voice='Polly.Amy')
-        
-        # Add a short pause after the question
-        resp.pause(length=0.5)
-        
-        # Record the response
-        resp.record(
-            action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
-            maxLength='30',
-            playBeep=False,
-            trim='trim-silence'
-        )
+        gather = Gather(input='speech', action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}', 
+                       method='POST', timeout=5)
+        gather.say(question, voice='Polly.Amy')
+        resp.append(gather)
         
         logger.info(f"Initialized call {call_sid} with first question")
         return HttpResponse(str(resp))
@@ -533,55 +529,41 @@ def view_response(request, response_id):
     response = CallResponse.objects.get(id=response_id)
     return render(request, 'call/view_response.html', {'response': response})
 
+@login_required
 def export_to_excel(request):
+    """Export call responses to Excel"""
     try:
-        # Get all responses
-        responses = CallResponse.objects.all().order_by('-created_at')
+        # Get all completed responses
+        responses = CallResponse.objects.filter(call_status='completed').order_by('created_at')
         
         # Create a DataFrame
         data = []
         for response in responses:
             data.append({
                 'Phone Number': response.phone_number,
-                'Question': response.question or 'N/A',
-                'Response': response.response or 'N/A',
-                'Recording URL': response.recording_url or 'N/A',
-                'Recording Duration (seconds)': response.recording_duration or 'N/A',
-                'Transcript': response.transcript or 'N/A',
-                'Transcript Status': response.transcript_status,
-                'Call SID': response.call_sid or 'N/A',
-                'Call Duration (seconds)': response.call_duration or 'N/A',
-                'Call Status': response.call_status or 'N/A',
-                'Created At': response.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'Updated At': response.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+                'Question': response.question,
+                'Response': response.response,
+                'Transcript': response.transcript,
+                'Recording Duration': response.recording_duration,
+                'Created At': response.created_at
             })
         
         df = pd.DataFrame(data)
         
-        # Create Excel writer
+        # Create Excel file in memory
         output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Call Responses', index=False)
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, sheet_name='Responses', index=False)
             
-            # Get workbook and worksheet
-            workbook = writer.book
-            worksheet = writer.sheets['Call Responses']
-            
-            # Auto-adjust column widths
-            for column in worksheet.columns:
-                max_length = 0
-                column = [cell for cell in column]
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = (max_length + 2)
-                worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
+            # Auto-adjust columns width
+            worksheet = writer.sheets['Responses']
+            for i, col in enumerate(df.columns):
+                max_length = max(df[col].astype(str).apply(len).max(), len(col)) + 2
+                worksheet.set_column(i, i, max_length)
         
-        # Set up the response
         output.seek(0)
+        
+        # Create the response
         response = HttpResponse(
             output.read(),
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -592,7 +574,7 @@ def export_to_excel(request):
         
     except Exception as e:
         logger.error(f"Error exporting to Excel: {str(e)}")
-        messages.error(request, f"Error exporting to Excel: {str(e)}")
+        messages.error(request, "Error exporting data to Excel")
         return redirect('dashboard')
 
 @csrf_exempt
@@ -618,28 +600,17 @@ def voice(request):
             logger.error(f"Response {response_id} not found")
             return HttpResponse('Response not found', status=404)
             
-        # Get the recording URL and SID
-        recording_url = request.POST.get('RecordingUrl')
-        recording_sid = request.POST.get('RecordingSid')
-        recording_duration = request.POST.get('RecordingDuration')
-        
-        if recording_url and recording_sid:
-            # Update the current response with recording details
-            current_response.recording_url = recording_url
-            current_response.recording_sid = recording_sid
-            current_response.recording_duration = recording_duration
+        # Get the speech result
+        speech_result = request.POST.get('SpeechResult', '').strip()
+        if speech_result:
+            logger.info(f"Received answer for question {current_response.question}: {speech_result}")
+            current_response.response = speech_result
             current_response.save()
             
-            # Start transcription process
-            try:
-                client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-                transcription = client.transcriptions.create(
-                    recording_sid=recording_sid,
-                    language_code='en-US'
-                )
-                logger.info(f"Started transcription for recording {recording_sid}")
-            except Exception as e:
-                logger.error(f"Error starting transcription: {str(e)}")
+            # Save to CSV for backup
+            with open('responses.csv', 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([current_response.question, speech_result])
         
         # Get the current question index from the session
         current_index = request.session.get('current_question_index', 0)
@@ -667,22 +638,11 @@ def voice(request):
             # Update the question index for next time
             request.session['current_question_index'] = next_index
             
-            # Add a short pause before asking the question
-            resp.pause(length=0.5)
-            
             # Ask the question
-            resp.say(question, voice='Polly.Amy')
-            
-            # Add a short pause after the question
-            resp.pause(length=0.5)
-            
-            # Record the response
-            resp.record(
-                action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
-                maxLength='30',
-                playBeep=False,
-                trim='trim-silence'
-            )
+            gather = Gather(input='speech', action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}', 
+                           method='POST', timeout=5)
+            gather.say(question, voice='Polly.Amy')
+            resp.append(gather)
             
             logger.info(f"Generated TwiML for question {next_index + 1} for call {call_sid}")
         else:
@@ -721,3 +681,34 @@ def call_status(request):
     except Exception as e:
         logger.error(f"Error in call_status view: {str(e)}")
         return HttpResponse(status=500)
+
+@login_required
+def download_csv(request):
+    """Download responses as CSV"""
+    try:
+        # Get all completed responses
+        responses = CallResponse.objects.filter(call_status='completed').order_by('created_at')
+        
+        # Create the response
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename=call_responses.csv'
+        
+        # Create CSV writer
+        writer = csv.writer(response)
+        writer.writerow(['Question', 'Response', 'Transcript', 'Created At'])
+        
+        # Write data
+        for response_obj in responses:
+            writer.writerow([
+                response_obj.question,
+                response_obj.response,
+                response_obj.transcript,
+                response_obj.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            ])
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error downloading CSV: {str(e)}")
+        messages.error(request, "Error downloading CSV file")
+        return redirect('dashboard')
