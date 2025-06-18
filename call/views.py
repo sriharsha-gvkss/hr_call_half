@@ -88,7 +88,9 @@ def make_call(request):
             to=phone_number,
             from_=settings.TWILIO_PHONE_NUMBER,
             url=webhook_url,
-            record=True
+            record=True,
+            status_callback=f"{settings.PUBLIC_URL}/call_status/",
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed']
         )
         
         # Create initial call response record
@@ -623,3 +625,20 @@ def transcription_webhook(request):
             return HttpResponse(f"Error processing transcription: {str(e)}", status=500)
             
     return HttpResponse("Invalid request method", status=400)
+
+@csrf_exempt
+def call_status(request):
+    """Handle call status updates"""
+    try:
+        call_sid = request.POST.get('CallSid')
+        call_status = request.POST.get('CallStatus')
+        
+        if call_sid and call_status:
+            # Update all responses for this call with the new status
+            CallResponse.objects.filter(call_sid=call_sid).update(call_status=call_status)
+            logger.info(f"Updated call {call_sid} status to {call_status}")
+        
+        return HttpResponse(status=200)
+    except Exception as e:
+        logger.error(f"Error in call_status view: {str(e)}")
+        return HttpResponse(status=500)

@@ -119,11 +119,18 @@
                                                     {% if response.recording_url %}
                                                         <div class="mt-2">
                                                             <p><strong>Recording:</strong></p>
-                                                            <audio controls class="w-100">
-                                                                <source src="{{ response.recording_url }}" type="audio/mpeg">
-                                                                Your browser does not support the audio element.
-                                                            </audio>
-                                                            <small class="text-muted">Duration: {{ response.recording_duration }} seconds</small>
+                                                            <div class="audio-player">
+                                                                <audio controls class="w-100">
+                                                                    <source src="{{ response.recording_url }}" type="audio/mpeg">
+                                                                    Your browser does not support the audio element.
+                                                                </audio>
+                                                                <div class="d-flex justify-content-between align-items-center mt-1">
+                                                                    <small class="text-muted">Duration: {{ response.recording_duration }} seconds</small>
+                                                                    <a href="{{ response.recording_url }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                                                        <i class="fas fa-download"></i> Download
+                                                                    </a>
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     {% endif %}
                                                     <small class="text-muted">
@@ -144,4 +151,16 @@
         </div>
     </div>
 </div>
+
+<style>
+.audio-player {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 5px;
+}
+.audio-player audio {
+    width: 100%;
+    margin-bottom: 5px;
+}
+</style>
 {% endblock %} 
