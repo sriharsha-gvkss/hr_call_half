@@ -210,10 +210,12 @@ def dashboard(request):
         # Get all responses ordered by creation date
         responses = CallResponse.objects.all().order_by('-created_at')
         
-        # Get statistics
-        total_responses = responses.count()
-        total_recordings = responses.exclude(recording_url__isnull=True).count()
-        total_transcripts = responses.filter(transcript_status='completed').count()
+        # Get transcript statistics
+        transcript_stats = {
+            'completed': responses.filter(transcript_status='completed').count(),
+            'pending': responses.filter(transcript_status='pending').count(),
+            'failed': responses.filter(transcript_status='failed').count()
+        }
         
         # Group responses by phone number
         responses_by_phone = {}
@@ -222,18 +224,11 @@ def dashboard(request):
                 responses_by_phone[response.phone_number] = []
             responses_by_phone[response.phone_number].append(response)
         
-        # Get transcript statistics
-        transcript_stats = {
-            'completed': responses.filter(transcript_status='completed').count(),
-            'pending': responses.filter(transcript_status='pending').count(),
-            'failed': responses.filter(transcript_status='failed').count(),
-        }
-        
         context = {
             'responses': responses,
-            'total_responses': total_responses,
-            'total_recordings': total_recordings,
-            'total_transcripts': total_transcripts,
+            'total_responses': responses.count(),
+            'total_recordings': responses.exclude(recording_url__isnull=True).count(),
+            'total_transcripts': transcript_stats['completed'],
             'responses_by_phone': responses_by_phone,
             'transcript_stats': transcript_stats
         }
