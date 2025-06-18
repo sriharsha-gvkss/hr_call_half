@@ -9,15 +9,49 @@
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold text-gray-800 mb-8">Call Response Dashboard</h1>
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Call Response Dashboard</h1>
+            <div class="flex space-x-4">
+                <a href="{% url 'export_excel' %}" class="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <i class="fas fa-file-excel mr-2"></i> Export to Excel
+                </a>
+            </div>
+        </div>
+
+        {% if error %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <span class="block sm:inline">{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Statistics -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Statistics</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <p class="text-sm text-blue-600">Total Responses</p>
+                    <p class="text-2xl font-bold text-blue-700">{{ total_responses }}</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <p class="text-sm text-green-600">Total Recordings</p>
+                    <p class="text-2xl font-bold text-green-700">{{ total_recordings }}</p>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <p class="text-sm text-purple-600">Total Transcripts</p>
+                    <p class="text-2xl font-bold text-purple-700">{{ total_transcripts }}</p>
+                </div>
+            </div>
+        </div>
         
         <!-- Make Call Form -->
         <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 class="text-xl font-semibold mb-4">Make a Call</h2>
-            <form id="callForm" class="space-y-4">
+            <form method="POST" action="{% url 'make_call' %}" class="space-y-4">
+                {% csrf_token %}
                 <div>
                     <label for="phone_number" class="block text-sm font-medium text-gray-700">Phone Number</label>
                     <input type="tel" id="phone_number" name="phone_number" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                    <p class="mt-1 text-sm text-gray-500">Format: 91XXXXXXXXXX (e.g., 919876543210)</p>
                 </div>
                 <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                     Make Call
@@ -25,93 +59,76 @@
             </form>
         </div>
         
-        <!-- Response List -->
-        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
-            <h2 class="text-xl font-semibold p-6 border-b">Recent Responses</h2>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone Number</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Question</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Response</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
+        <!-- Responses by Phone Number -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
+            <h2 class="text-xl font-semibold p-6 border-b">Responses by Phone Number</h2>
+            <div class="divide-y divide-gray-200">
+                {% for phone, responses in responses_by_phone.items %}
+                <div class="p-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">{{ phone }}</h3>
+                    <div class="space-y-4">
                         {% for response in responses %}
-                        <tr class="hover:bg-gray-50">
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {{ response.phone_number }}
-                            </td>
-                            <td class="px-6 py-4 text-sm text-gray-900">
-                                {{ response.question }}
-                            </td>
-                            <td class="px-6 py-4 text-sm text-gray-900">
-                                {% if response.recording_url %}
-                                    <audio controls class="w-64">
-                                        <source src="{{ response.recording_url }}" type="audio/wav">
-                                        Your browser does not support the audio element.
-                                    </audio>
-                                {% else %}
-                                    <span class="text-gray-400">No recording available</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {{ response.created_at|date:"M d, Y H:i" }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {% if response.recording_url %}
-                                    <a href="{{ response.recording_url }}" target="_blank" class="text-blue-600 hover:text-blue-900">
-                                        <i class="fas fa-download"></i> Download
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900">Question:</p>
+                                    <p class="mt-1 text-sm text-gray-600">{{ response.question }}</p>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                    {{ response.created_at|date:"M d, Y H:i" }}
+                                </div>
+                            </div>
+                            {% if response.recording_url %}
+                            <div class="mt-4">
+                                <p class="text-sm font-medium text-gray-900">Recording:</p>
+                                <audio controls class="mt-2 w-full">
+                                    <source src="{{ response.recording_url }}" type="audio/wav">
+                                    Your browser does not support the audio element.
+                                </audio>
+                                <div class="mt-2 flex space-x-4">
+                                    <a href="{{ response.recording_url }}" target="_blank" class="text-blue-600 hover:text-blue-900 text-sm">
+                                        <i class="fas fa-download mr-1"></i> Download
                                     </a>
-                                    <a href="{% url 'view_response' response.id %}" class="ml-2 text-green-600 hover:text-green-900">
-                                        <i class="fas fa-eye"></i> View Response
+                                    <a href="{% url 'view_response' response.id %}" class="text-green-600 hover:text-green-900 text-sm">
+                                        <i class="fas fa-eye mr-1"></i> View Details
                                     </a>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="px-6 py-4 text-center text-gray-500">
-                                No responses recorded yet.
-                            </td>
-                        </tr>
+                                </div>
+                            </div>
+                            {% else %}
+                            <p class="mt-4 text-sm text-gray-500">No recording available</p>
+                            {% endif %}
+                            
+                            {% if response.transcript %}
+                            <div class="mt-4">
+                                <p class="text-sm font-medium text-gray-900">Transcript:</p>
+                                <div class="mt-2 p-3 bg-white rounded border border-gray-200">
+                                    <p class="text-sm text-gray-700">{{ response.transcript }}</p>
+                                </div>
+                            </div>
+                            {% elif response.transcript_status == 'pending' %}
+                            <div class="mt-4">
+                                <p class="text-sm text-yellow-600">
+                                    <i class="fas fa-spinner fa-spin mr-1"></i> Transcript processing...
+                                </p>
+                            </div>
+                            {% elif response.transcript_status == 'failed' %}
+                            <div class="mt-4">
+                                <p class="text-sm text-red-600">
+                                    <i class="fas fa-exclamation-circle mr-1"></i> Failed to generate transcript
+                                </p>
+                            </div>
+                            {% endif %}
+                        </div>
                         {% endfor %}
-                    </tbody>
-                </table>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="p-6 text-center text-gray-500">
+                    No responses recorded yet.
+                </div>
+                {% endfor %}
             </div>
         </div>
     </div>
-
-    <script>
-        document.getElementById('callForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const phoneNumber = document.getElementById('phone_number').value;
-            
-            // Create form data
-            const formData = new FormData();
-            formData.append('phone_number', phoneNumber);
-            
-            fetch('/make-call/', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    alert('Error: ' + data.error);
-                } else {
-                    alert('Call initiated successfully!');
-                    location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred while making the call.');
-            });
-        });
-    </script>
 </body>
 </html> 

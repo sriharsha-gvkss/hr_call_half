@@ -3,9 +3,12 @@ from . import views
 
 urlpatterns = [
     path('', views.index, name='index'),
+    path('dashboard/', views.dashboard, name='dashboard'),
     path('make-call/', views.make_call, name='make_call'),
-    path('answer/', views.answer, name='answer'),
-    path('recording_status/', views.recording_status, name='recording_status'),
+    path('answer/', views.voice, name='voice'),
+    path('recording-status/', views.recording_status, name='recording_status'),
     path('test-config/', views.test_config, name='test_config'),
-    path('view_response/<int:response_id>/', views.view_response, name='view_response'),
+    path('view-response/<int:response_id>/', views.view_response, name='view_response'),
+    path('export-excel/', views.export_to_excel, name='export_excel'),
+    path('transcription/', views.transcription_webhook, name='transcription'),
 ]
