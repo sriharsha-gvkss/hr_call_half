@@ -428,7 +428,7 @@ def voice(request):
                 phone_number=call.to,
                 call_sid=call_sid,
                 question=question,
-                call_status=call.status
+                call_status='in-progress'
             )
             
             # Store the response ID in the session
