@@ -11,4 +11,5 @@ urlpatterns = [
     path('view-response/<int:response_id>/', views.view_response, name='view_response'),
     path('export-excel/', views.export_to_excel, name='export_excel'),
     path('transcription/', views.transcription_webhook, name='transcription'),
+    path('retry-transcription/<int:response_id>/', views.retry_transcription, name='retry_transcription'),
 ]
