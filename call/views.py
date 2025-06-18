@@ -35,6 +35,7 @@ PUBLIC_URL = "https://call-1-u39m.onrender.com"  # Update this with your Render 
 
 # Define the sequence of questions
 INTERVIEW_QUESTIONS = [
+    "Hi, what is your full name?",
     "What is your work experience?",
     "What was your previous job role?",
     "Why do you want to join our company?"
@@ -255,6 +256,7 @@ def recording_status(request):
         # Check if we have more questions to ask
         current_index = request.session.get('current_question_index', 0)
         questions = [
+            "hi what is your full name?"
             "What is your work experience?",
             "What was your previous job role?",
             "Why do you want to join our company?"
