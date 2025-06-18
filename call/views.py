@@ -33,6 +33,13 @@ client = Client(
 # Public URL for webhooks - Replace this with your actual public URL
 PUBLIC_URL = "https://call-1-u39m.onrender.com"  # Update this with your Render URL
 
+# Define the sequence of questions
+INTERVIEW_QUESTIONS = [
+    "What is your work experience?",
+    "What was your previous job role?",
+    "Why do you want to join our company?"
+]
+
 def format_phone_number(phone_number):
     """Format phone number to E.164 format"""
     # Remove any non-digit characters
@@ -121,19 +128,12 @@ def answer(request):
         # Get call details
         call = client.calls(call_sid).fetch()
         
-        # Define the sequence of questions
-        questions = [
-            "What is your work experience?",
-            "What was your previous job role?",
-            "Why do you want to join our company?"
-        ]
-        
         # Reset session for new call
-        request.session['questions'] = questions
+        request.session['questions'] = INTERVIEW_QUESTIONS
         request.session['current_question_index'] = 0
         
         # Get the first question
-        question = questions[0]
+        question = INTERVIEW_QUESTIONS[0]
         
         # Create a new response record
         response = CallResponse.objects.create(
@@ -166,7 +166,6 @@ def answer(request):
             trim='trim-silence'
         )
         
-        logger.info(f"Generated TwiML response for call {call_sid}")
         return HttpResponse(str(resp))
         
     except Exception as e:
@@ -506,11 +505,7 @@ def voice(request):
                 logger.error(f"Response not found: {response_id}")
         
         # Get questions from session or use default
-        questions = request.session.get('questions', [
-            "What is your work experience?",
-            "What was your previous job role?",
-            "Why do you want to join our company?"
-        ])
+        questions = request.session.get('questions', INTERVIEW_QUESTIONS)
         
         # Get current question index from session or initialize to 0
         current_index = request.session.get('current_question_index', 0)
