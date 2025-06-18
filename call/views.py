@@ -153,7 +153,7 @@ def answer(request):
         
         # Record the response
         resp.record(
-            action=f'/recording_status/?response_id={response.id}',
+            action=f'/voice/?response_id={response.id}',
             maxLength='30',
             playBeep=False
         )
@@ -426,11 +426,43 @@ def voice(request):
         if not call_sid:
             return HttpResponse('No CallSid provided', status=400)
 
+        # Get the response ID from the URL parameters
+        response_id = request.GET.get('response_id')
+        if not response_id:
+            return HttpResponse('No response_id provided', status=400)
+
         # Initialize Twilio client
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
         # Get call details
         call = client.calls(call_sid).fetch()
+        
+        # Get the recording SID from the request
+        recording_sid = request.POST.get('RecordingSid')
+        if recording_sid:
+            # Update the previous response with recording details
+            try:
+                response = CallResponse.objects.get(id=response_id)
+                recording = client.recordings(recording_sid).fetch()
+                response.recording_sid = recording_sid
+                response.recording_url = recording.uri
+                response.recording_duration = recording.duration
+                response.save()
+
+                # Try to get the transcript
+                try:
+                    transcript = client.transcriptions.list(recording_sid=recording_sid)
+                    if transcript:
+                        response.transcript = transcript[0].transcription_text
+                        response.transcript_status = 'completed'
+                    else:
+                        response.transcript_status = 'pending'
+                except Exception as e:
+                    logger.error(f"Error fetching transcript: {str(e)}")
+                    response.transcript_status = 'failed'
+                response.save()
+            except CallResponse.DoesNotExist:
+                logger.error(f"Response not found: {response_id}")
         
         # Get questions from session or use default
         questions = request.session.get('questions', [
@@ -467,7 +499,7 @@ def voice(request):
             
             # Record the response
             resp.record(
-                action=f'/recording_status/?response_id={response.id}',
+                action=f'/voice/?response_id={response.id}',
                 maxLength='30',
                 playBeep=False
             )
