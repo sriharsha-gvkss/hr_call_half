@@ -16,6 +16,8 @@ import pandas as pd
 import logging
 import time
 import json
+from io import BytesIO
+from django.contrib import messages
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,7 @@ def make_call(request):
     try:
         phone_number = request.POST.get('phone_number')
         if not phone_number:
+            messages.error(request, "Phone number is required")
             return redirect('dashboard')
 
         # Format phone number for India
@@ -79,11 +82,21 @@ def make_call(request):
             record=True
         )
         
+        # Create initial call response record
+        CallResponse.objects.create(
+            phone_number=phone_number,
+            call_sid=call.sid,
+            call_status=call.status,
+            question="Call initiated"
+        )
+        
         logger.info(f"Call initiated to {phone_number} with SID: {call.sid}")
+        messages.success(request, f"Call successfully initiated to {phone_number}")
         return redirect('dashboard')
         
     except Exception as e:
         logger.error(f"Error making call: {str(e)}")
+        messages.error(request, f"Error making call: {str(e)}")
         return redirect('dashboard')
 
 # Answer call with questions
@@ -265,40 +278,66 @@ def view_response(request, response_id):
     return render(request, 'call/view_response.html', {'response': response})
 
 def export_to_excel(request):
-    """Export all responses to Excel"""
     try:
         # Get all responses
         responses = CallResponse.objects.all().order_by('-created_at')
         
         # Create a DataFrame
-        data = {
-            'Phone Number': [r.phone_number for r in responses],
-            'Question': [r.question for r in responses],
-            'Recording URL': [r.recording_url for r in responses],
-            'Created At': [r.created_at.strftime('%Y-%m-%d %H:%M:%S') for r in responses]
-        }
+        data = []
+        for response in responses:
+            data.append({
+                'Phone Number': response.phone_number,
+                'Question': response.question or 'N/A',
+                'Response': response.response or 'N/A',
+                'Recording URL': response.recording_url or 'N/A',
+                'Recording Duration (seconds)': response.recording_duration or 'N/A',
+                'Transcript': response.transcript or 'N/A',
+                'Transcript Status': response.transcript_status,
+                'Call SID': response.call_sid or 'N/A',
+                'Call Duration (seconds)': response.call_duration or 'N/A',
+                'Call Status': response.call_status or 'N/A',
+                'Created At': response.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'Updated At': response.updated_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
         df = pd.DataFrame(data)
         
-        # Create Excel file
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'call_responses_{timestamp}.xlsx'
+        # Create Excel writer
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Call Responses', index=False)
+            
+            # Get workbook and worksheet
+            workbook = writer.book
+            worksheet = writer.sheets['Call Responses']
+            
+            # Auto-adjust column widths
+            for column in worksheet.columns:
+                max_length = 0
+                column = [cell for cell in column]
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column[0].column_letter].width = adjusted_width
         
-        # Save to Excel
-        df.to_excel(filename, index=False)
-        
-        # Read the file and create response
-        with open(filename, 'rb') as f:
-            response = HttpResponse(f.read(), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-        
-        # Delete the temporary file
-        os.remove(filename)
+        # Set up the response
+        output.seek(0)
+        response = HttpResponse(
+            output.read(),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = 'attachment; filename=call_responses.xlsx'
         
         return response
         
     except Exception as e:
-        print(f"Error exporting to Excel: {str(e)}")
-        return HttpResponse('Error exporting to Excel', status=500)
+        logger.error(f"Error exporting to Excel: {str(e)}")
+        messages.error(request, f"Error exporting to Excel: {str(e)}")
+        return redirect('dashboard')
 
 @csrf_exempt
 def voice(request):
