@@ -153,7 +153,7 @@ def answer(request):
         
         # Record the response
         resp.record(
-            action=f'/voice/?response_id={response.id}',
+            action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
             maxLength='30',
             playBeep=False
         )
@@ -499,7 +499,7 @@ def voice(request):
             
             # Record the response
             resp.record(
-                action=f'/voice/?response_id={response.id}',
+                action=f'{settings.PUBLIC_URL}/voice/?response_id={response.id}',
                 maxLength='30',
                 playBeep=False
             )
