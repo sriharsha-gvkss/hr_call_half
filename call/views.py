@@ -78,6 +78,7 @@ def make_call(request):
         
         # Reset session for new call
         request.session['current_question_index'] = 0
+        request.session['questions'] = INTERVIEW_QUESTIONS
         
         # Create webhook URL using settings
         webhook_url = f"{settings.PUBLIC_URL}/answer/"
@@ -129,10 +130,6 @@ def answer(request):
         # Get call details
         call = client.calls(call_sid).fetch()
         
-        # Reset session for new call
-        request.session['questions'] = INTERVIEW_QUESTIONS
-        request.session['current_question_index'] = 0
-        
         # Get the first question
         question = INTERVIEW_QUESTIONS[0]
         
@@ -150,14 +147,14 @@ def answer(request):
         # Create TwiML response
         resp = VoiceResponse()
         
-        # Add a pause before asking the question
-        resp.pause(length=1)
+        # Add a short pause before asking the question
+        resp.pause(length=0.5)
         
         # Ask the question
         resp.say(question, voice='Polly.Amy')
         
-        # Add a pause after the question
-        resp.pause(length=1)
+        # Add a short pause after the question
+        resp.pause(length=0.5)
         
         # Record the response
         resp.record(
@@ -536,14 +533,14 @@ def voice(request):
             # Store the response ID in the session
             request.session['response_id'] = response.id
             
-            # Add a pause before asking the question
-            resp.pause(length=1)
+            # Add a short pause before asking the question
+            resp.pause(length=0.5)
             
             # Ask the question
             resp.say(question, voice='Polly.Amy')
             
-            # Add a pause after the question
-            resp.pause(length=1)
+            # Add a short pause after the question
+            resp.pause(length=0.5)
             
             # Record the response
             resp.record(
