@@ -115,7 +115,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
-PUBLIC_URL = os.getenv('PUBLIC_URL', 'http://127.0.0.1:8000')  # Default to localhost if not set
+PUBLIC_URL = 'https://call-1-u39m.onrender.com'  # Render deployment URL
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField' 
