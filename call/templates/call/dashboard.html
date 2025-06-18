@@ -73,16 +73,29 @@
                                         <div class="col-md-6">
                                             <h6>Responses</h6>
                                             {% for response in call.responses.all %}
-                                                <div class="mb-3">
+                                                <div class="mb-3 p-3 border rounded">
                                                     <p><strong>Q:</strong> {{ response.question }}</p>
                                                     {% if response.transcript %}
-                                                        <p><strong>Transcript:</strong> {{ response.transcript }}</p>
+                                                        <div class="mt-2">
+                                                            <p><strong>Transcript:</strong></p>
+                                                            <div class="p-2 bg-light rounded">
+                                                                {{ response.transcript }}
+                                                            </div>
+                                                        </div>
+                                                    {% elif response.transcript_status == 'pending' %}
+                                                        <p class="text-warning">Transcript pending...</p>
+                                                    {% elif response.transcript_status == 'failed' %}
+                                                        <p class="text-danger">Failed to get transcript</p>
                                                     {% endif %}
                                                     {% if response.recording_url %}
-                                                        <audio controls class="w-100">
-                                                            <source src="{{ response.recording_url }}" type="audio/mpeg">
-                                                            Your browser does not support the audio element.
-                                                        </audio>
+                                                        <div class="mt-2">
+                                                            <p><strong>Recording:</strong></p>
+                                                            <audio controls class="w-100">
+                                                                <source src="{{ response.recording_url }}" type="audio/mpeg">
+                                                                Your browser does not support the audio element.
+                                                            </audio>
+                                                            <small class="text-muted">Duration: {{ response.recording_duration }} seconds</small>
+                                                        </div>
                                                     {% endif %}
                                                     <small class="text-muted">
                                                         {{ response.created_at|date:"M d, Y H:i:s" }}

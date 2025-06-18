@@ -79,7 +79,6 @@ def make_call(request):
         
         # Reset session for new call
         request.session['current_question_index'] = 0
-        request.session['questions'] = INTERVIEW_QUESTIONS
         
         # Create webhook URL using settings
         webhook_url = f"{settings.PUBLIC_URL}/answer/"
@@ -130,9 +129,6 @@ def answer(request):
         
         # Get call details
         call = client.calls(call_sid).fetch()
-        
-        # Reset session for new call
-        request.session['current_question_index'] = 0
         
         # Get the first question
         question = INTERVIEW_QUESTIONS[0]
@@ -309,13 +305,29 @@ def dashboard(request):
             # Get the first response for each call to get call details
             first_response = CallResponse.objects.filter(call_sid=call['call_sid']).first()
             if first_response:
+                # Get all responses for this call
+                responses = CallResponse.objects.filter(call_sid=call['call_sid']).order_by('created_at')
+                
+                # Get transcripts for each response
+                for response in responses:
+                    if response.recording_sid and not response.transcript:
+                        try:
+                            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+                            transcript = client.transcriptions.list(recording_sid=response.recording_sid)
+                            if transcript:
+                                response.transcript = transcript[0].transcription_text
+                                response.transcript_status = 'completed'
+                                response.save()
+                        except Exception as e:
+                            logger.error(f"Error fetching transcript for recording {response.recording_sid}: {str(e)}")
+                
                 call_records.append({
                     'phone_number': first_response.phone_number,
                     'call_sid': first_response.call_sid,
                     'call_status': first_response.call_status,
                     'created_at': first_response.created_at,
                     'recording_duration': first_response.recording_duration,
-                    'responses': CallResponse.objects.filter(call_sid=call['call_sid']).order_by('created_at')
+                    'responses': responses
                 })
         
         # Calculate statistics
