@@ -1,46 +1,29 @@
-{% extends 'base.html' %}
+{% extends 'call/base.html' %}
 
 {% block content %}
-<div class="container mt-4">
-    <h1>Call Dashboard</h1>
+<div class="container mt-5">
+    <h2>Call Dashboard</h2>
     
-    <!-- Messages/Alerts -->
-    {% if messages %}
-    <div class="messages mb-4">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    
-    <!-- Make Call Form -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">Make a Call</h5>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="{% url 'make_call' %}" class="row g-3">
-                {% csrf_token %}
-                <div class="col-md-8">
-                    <input type="tel" class="form-control" id="phone_number" name="phone_number" 
-                           placeholder="Enter phone number (e.g., 919876543210)" required>
-                </div>
-                <div class="col-md-4">
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="fas fa-phone me-2"></i>Make Call
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-    
-    <!-- Statistics Section -->
+    <!-- Statistics Cards -->
     <div class="row mb-4">
         <div class="col-md-3">
-            <div class="card">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Total Calls</h5>
+                    <p class="card-text display-4">{{ total_calls }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h5 class="card-title">Completed Calls</h5>
+                    <p class="card-text display-4">{{ completed_calls }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
                 <div class="card-body">
                     <h5 class="card-title">Total Responses</h5>
                     <p class="card-text display-4">{{ total_responses }}</p>
@@ -48,151 +31,82 @@
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card">
+            <div class="card bg-warning text-white">
                 <div class="card-body">
-                    <h5 class="card-title">Total Recordings</h5>
-                    <p class="card-text display-4">{{ total_recordings }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Total Transcripts</h5>
-                    <p class="card-text display-4">{{ total_transcripts }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Export Data</h5>
-                    <a href="{% url 'export_excel' %}" class="btn btn-primary">
-                        <i class="fas fa-file-excel me-2"></i>Download Excel
-                    </a>
+                    <h5 class="card-title">Actions</h5>
+                    <a href="{% url 'export_excel' %}" class="btn btn-light">Export to Excel</a>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Transcript Status Section -->
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h5 class="card-title">Completed Transcripts</h5>
-                    <p class="card-text display-4">{{ transcript_stats.completed }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-warning text-dark">
-                <div class="card-body">
-                    <h5 class="card-title">Pending Transcripts</h5>
-                    <p class="card-text display-4">{{ transcript_stats.pending }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-danger text-white">
-                <div class="card-body">
-                    <h5 class="card-title">Failed Transcripts</h5>
-                    <p class="card-text display-4">{{ transcript_stats.failed }}</p>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Responses Table -->
+    <!-- Make Call Form -->
     <div class="card mb-4">
         <div class="card-header">
-            <h5 class="mb-0">All Responses</h5>
+            <h3>Make a Call</h3>
         </div>
         <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-striped">
-                    <thead>
-                        <tr>
-                            <th>Phone Number</th>
-                            <th>Question</th>
-                            <th>Call Status</th>
-                            <th>Recording</th>
-                            <th>Duration</th>
-                            <th>Transcript</th>
-                            <th>Status</th>
-                            <th>Created At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for response in responses %}
-                        <tr>
-                            <td>{{ response.phone_number }}</td>
-                            <td>{{ response.question|default:"N/A" }}</td>
-                            <td>
-                                <span class="badge {% if response.call_status == 'completed' %}bg-success{% elif response.call_status == 'in-progress' %}bg-warning{% elif response.call_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                                    {{ response.call_status|default:"N/A" }}
-                                </span>
-                            </td>
-                            <td>
-                                {% if response.recording_url %}
-                                <audio controls class="w-100">
-                                    <source src="{{ response.recording_url }}" type="audio/mpeg">
-                                    Your browser does not support the audio element.
-                                </audio>
-                                {% else %}
-                                N/A
-                                {% endif %}
-                            </td>
-                            <td>{{ response.recording_duration|default:"N/A" }}s</td>
-                            <td>
-                                {% if response.transcript %}
-                                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#transcriptModal{{ response.id }}">
-                                    View Transcript
-                                </button>
-                                {% else %}
-                                {{ response.transcript_status }}
-                                {% endif %}
-                            </td>
-                            <td>
-                                <span class="badge {% if response.transcript_status == 'completed' %}bg-success{% elif response.transcript_status == 'pending' %}bg-warning{% else %}bg-danger{% endif %}">
-                                    {{ response.transcript_status }}
-                                </span>
-                            </td>
-                            <td>{{ response.created_at|date:"Y-m-d H:i:s" }}</td>
-                        </tr>
+            <form method="post" action="{% url 'make_call' %}">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="phone_number">Phone Number</label>
+                    <input type="tel" class="form-control" id="phone_number" name="phone_number" required>
+                    <small class="form-text text-muted">Enter the phone number with country code (e.g., +91XXXXXXXXXX)</small>
+                </div>
+                <button type="submit" class="btn btn-primary">Make Call</button>
+            </form>
+        </div>
+    </div>
 
-                        <!-- Transcript Modal -->
-                        {% if response.transcript %}
-                        <div class="modal fade" id="transcriptModal{{ response.id }}" tabindex="-1">
-                            <div class="modal-dialog modal-lg">
-                                <div class="modal-content">
-                                    <div class="modal-header">
-                                        <h5 class="modal-title">Transcript for {{ response.phone_number }}</h5>
-                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                    </div>
-                                    <div class="modal-body">
-                                        <p>{{ response.transcript }}</p>
-                                    </div>
+    <!-- Call Records -->
+    <div class="card">
+        <div class="card-header">
+            <h3>Call Records</h3>
+        </div>
+        <div class="card-body">
+            {% if calls %}
+                {% for call in calls %}
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h5 class="mb-0">Call to {{ call.phone_number }}</h5>
+                                    <small class="text-muted">Call SID: {{ call.call_sid }}</small>
+                                </div>
+                                <div>
+                                    <span class="badge {% if call.status == 'completed' %}bg-success{% else %}bg-warning{% endif %}">
+                                        {{ call.status }}
+                                    </span>
+                                    <small class="text-muted ms-2">{{ call.created_at|date:"F j, Y, g:i a" }}</small>
                                 </div>
                             </div>
                         </div>
-                        {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+                        <div class="card-body">
+                            {% for response in call.responses %}
+                                <div class="mb-3 p-3 border rounded">
+                                    <h6>Question: {{ response.question }}</h6>
+                                    {% if response.transcript %}
+                                        <p><strong>Transcript:</strong> {{ response.transcript }}</p>
+                                    {% endif %}
+                                    {% if response.recording_url %}
+                                        <div class="mt-2">
+                                            <audio controls>
+                                                <source src="{{ response.recording_url }}" type="audio/mpeg">
+                                                Your browser does not support the audio element.
+                                            </audio>
+                                            <small class="text-muted">Duration: {{ response.recording_duration }} seconds</small>
+                                        </div>
+                                    {% endif %}
+                                    <small class="text-muted">Recorded at: {{ response.created_at|date:"F j, Y, g:i a" }}</small>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-center">No call records found.</p>
+            {% endif %}
         </div>
     </div>
 </div>
-
-<style>
-.audio-controls {
-    width: 200px;
-}
-
-.modal-body {
-    max-height: 400px;
-    overflow-y: auto;
-}
-</style>
 {% endblock %} 

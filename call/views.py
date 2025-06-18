@@ -123,7 +123,6 @@ def answer(request):
         
         # Define the sequence of questions
         questions = [
-            "Hi, please tell us your full name.",
             "What is your work experience?",
             "What was your previous job role?",
             "Why do you want to join our company?"
@@ -257,7 +256,6 @@ def recording_status(request):
         # Check if we have more questions to ask
         current_index = request.session.get('current_question_index', 0)
         questions = [
-            "Hi, please tell us your full name.",
             "What is your work experience?",
             "What was your previous job role?",
             "Why do you want to join our company?"
@@ -293,45 +291,48 @@ def recording_status(request):
 
 # HR Dashboard
 def dashboard(request):
-    """Display dashboard with all responses"""
+    """Display dashboard with call records"""
     try:
-        # Get all responses ordered by creation date
+        # Get all call responses, ordered by most recent first
         responses = CallResponse.objects.all().order_by('-created_at')
         
-        # Get transcript statistics
-        transcript_stats = {
-            'completed': responses.filter(transcript_status='completed').count(),
-            'pending': responses.filter(transcript_status='pending').count(),
-            'failed': responses.filter(transcript_status='failed').count()
-        }
-        
-        # Group responses by phone number and call
-        responses_by_call = {}
+        # Group responses by call_sid
+        call_groups = {}
         for response in responses:
-            if response.call_sid not in responses_by_call:
-                responses_by_call[response.call_sid] = {
+            if response.call_sid not in call_groups:
+                call_groups[response.call_sid] = {
                     'phone_number': response.phone_number,
-                    'call_status': response.call_status,
-                    'call_duration': response.call_duration,
+                    'call_sid': response.call_sid,
+                    'status': response.call_status,
                     'created_at': response.created_at,
                     'responses': []
                 }
-            responses_by_call[response.call_sid]['responses'].append({
+            call_groups[response.call_sid]['responses'].append({
                 'question': response.question,
+                'transcript': response.transcript,
                 'recording_url': response.recording_url,
                 'recording_duration': response.recording_duration,
-                'transcript': response.transcript,
                 'transcript_status': response.transcript_status,
                 'created_at': response.created_at
             })
         
+        # Convert to list for template
+        calls = list(call_groups.values())
+        
+        # Get total calls
+        total_calls = len(calls)
+        
+        # Get completed calls
+        completed_calls = sum(1 for call in calls if call['status'] == 'completed')
+        
+        # Get total responses
+        total_responses = sum(len(call['responses']) for call in calls)
+        
         context = {
-            'responses': responses,
-            'total_responses': responses.count(),
-            'total_recordings': responses.exclude(recording_url__isnull=True).count(),
-            'total_transcripts': transcript_stats['completed'],
-            'responses_by_call': responses_by_call,
-            'transcript_stats': transcript_stats
+            'calls': calls,
+            'total_calls': total_calls,
+            'completed_calls': completed_calls,
+            'total_responses': total_responses
         }
         
         return render(request, 'call/dashboard.html', context)
@@ -339,14 +340,7 @@ def dashboard(request):
     except Exception as e:
         logger.error(f"Error in dashboard view: {str(e)}")
         messages.error(request, f"Error loading dashboard: {str(e)}")
-        return render(request, 'call/dashboard.html', {
-            'responses': [],
-            'total_responses': 0,
-            'total_recordings': 0,
-            'total_transcripts': 0,
-            'responses_by_call': {},
-            'transcript_stats': {'completed': 0, 'pending': 0, 'failed': 0}
-        })
+        return render(request, 'call/dashboard.html', {'calls': []})
 
 def index(request):
     """Render the main page"""
@@ -513,7 +507,6 @@ def voice(request):
         
         # Get questions from session or use default
         questions = request.session.get('questions', [
-            "Hi, please tell us your full name.",
             "What is your work experience?",
             "What was your previous job role?",
             "Why do you want to join our company?"
